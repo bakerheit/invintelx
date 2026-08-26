@@ -13,6 +13,13 @@ jobs:
           # Full history: a credential committed and then removed is still in
           # the history, and that is exactly what this is looking for.
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Run the scanner directly rather than through gitleaks-action, which
+      # derives a commit range from the push event and computes
+      # <first-commit>^..<head> on an initial push — a revision that cannot
+      # exist, because the root commit has no parent. Scanning the whole
+      # history is also what INVX-38 actually asks for.
+      - name: Scan full history for secrets
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
+            detect --source /repo --redact --verbose --exit-code 1
