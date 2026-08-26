@@ -1,0 +1,19 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# Nothing in this tree needs to run an install script. esbuild is the only
+# package that asks, and its postinstall only selects a platform binary that
+# pnpm already installs as an optional dependency - verified by running vite
+# and tsx with the script blocked.
+#
+# pnpm 11 defaults strictDepBuilds to true, which turns "a build script was
+# skipped" into a failed install. We have made the decision deliberately, so
+# it goes back to being a warning.
+strictDepBuilds: false
+onlyBuiltDependencies: []
+ignoredBuiltDependencies:
+  - esbuild
+allowBuilds:
+  esbuild: set this to true or false
+  mongodb-memory-server: set this to true or false

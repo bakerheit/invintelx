@@ -1,0 +1,28 @@
+# Local development database only. invintelx.org runs on managed Mongo;
+# this exists so a fresh clone has something to talk to.
+services:
+  mongo:
+    image: mongo:8
+    container_name: invintelx-mongo
+    restart: unless-stopped
+    # Single-node replica set: the stock movement ledger writes a movement and
+    # its projection in one transaction, and transactions require a replica set.
+    command: ['--replSet', 'rs0', '--bind_ip_all']
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # Doubles as the initiator - the first successful check bootstraps rs0.
+      test: >
+        mongosh --quiet --eval "
+          try { rs.status().ok }
+          catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}).ok }
+        "
+      interval: 5s
+      timeout: 30s
+      start_period: 5s
+      retries: 30
+
+volumes:
+  mongo-data:
