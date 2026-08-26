@@ -147,9 +147,15 @@ describe('item import', () => {
   it('rejects the whole file on a parse error and names the line', async () => {
     const cookie = await signIn();
 
+    /*
+     * The mapping is spelled out rather than derived, because deriving it means
+     * parsing the file here first - and this file is precisely the one that
+     * cannot be parsed. The point of the test is what the *server* does with it.
+     */
     const response = await preview(
       cookie,
       'sku,name\r\nBOLT-M6-30,"never closed\r\nNUT-M6,Hex nut M6\r\n',
+      { sku: 0, name: 1 },
     ).expect(400);
 
     expect(response.body.error.fields.csv).toContain('Line 2');
