@@ -9,9 +9,11 @@ import { itemsRouter } from './routes/items.js';
 import { locationsRouter } from './routes/locations.js';
 import { movementsRouter } from './routes/movements.js';
 import { analyticsRouter } from './routes/analytics.js';
+import { webAssets } from './web.js';
 
 export function createApp(): Express {
   const app = express();
+  const web = webAssets();
 
   // Behind a proxy in production, so req.ip reflects the client rather than the
   // load balancer - the rate limiter keys on it.
@@ -22,9 +24,11 @@ export function createApp(): Express {
   app.use(cookieParser());
 
   /**
-   * In development Vite proxies /api, so requests are same-origin and this never
-   * fires. It exists for a production topology where the web app is served from
-   * a different origin than the API.
+   * Normally dead code. In development Vite proxies /api, and in production
+   * this process serves the web app itself, so requests are same-origin either
+   * way and this never fires. It exists only for a deployment that puts the web
+   * app on a different origin - which also needs SameSite=None cookies to work,
+   * so this alone is not enough to make that topology function.
    */
   app.use((req, res, next) => {
     const origin = req.headers.origin;
@@ -42,6 +46,23 @@ export function createApp(): Express {
     next();
   });
 
+  /*
+   * Before `loadUser`, so serving a stylesheet does not cost a session lookup
+   * in Mongo. The matching fallback goes in last, after the routers have had
+   * their chance at the path.
+   */
+  app.use(web.serveFiles);
+
+  if (web.available) {
+    console.log(`[invintelx-api] serving the web app from ${web.root}`);
+  } else if (isProduction) {
+    console.warn(
+      `[invintelx-api] no web build at ${web.root}: serving /api only. Run ` +
+        `\`pnpm build\`, set WEB_DIST, or put a reverse proxy in front that ` +
+        `serves the assets itself.`,
+    );
+  }
+
   app.get('/api/health', (_req, res) => {
     void healthcheck().then((database) => {
       res.status(database ? 200 : 503).json({
@@ -58,6 +79,9 @@ export function createApp(): Express {
   app.use('/api/locations', requireAuth, locationsRouter);
   app.use('/api/movements', requireAuth, movementsRouter);
   app.use('/api/analytics', requireAuth, analyticsRouter);
+
+  // Last chance before the 404: a client-side route that survives a refresh.
+  app.use(web.spaFallback);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

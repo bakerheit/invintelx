@@ -14,7 +14,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // Same-origin in development, so the session cookie needs no CORS or
-      // SameSite=None dance. Production points the browser at the API directly.
+      // SameSite=None dance. This proxy is the dev-only equivalent of what the
+      // API does for itself in production, where it serves `dist` and answers
+      // /api from the same origin.
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: false,
