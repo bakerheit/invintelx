@@ -181,6 +181,30 @@ Releases are tagged and there is a changelog to read before you move, but there
 is no published image and no upgrade that has been proven across a version
 boundary. It is how you run it today, honestly described.
 
+### Backups
+
+The movement ledger is the only thing here that cannot be recomputed from
+something else, and on-hand quantity is the only thing that can. That shapes both
+halves of the job: what to dump, and how to prove a restore worked.
+
+```bash
+pnpm db:verify    # recompute on-hand from the ledger and compare. Writes nothing.
+pnpm db:rebuild   # then, if you accept the ledger, write the recomputed figures.
+```
+
+`pnpm db:verify` is what turns "did the restore work" into a check rather than a
+hope: it exits non-zero if the on-hand figures that came out of the archive
+disagree with the ledger they are supposed to be derived from, which is what a
+dump taken without a consistent snapshot leaves behind. Run it before rebuilding
+— a rebuild makes the numbers agree without making them right.
+
+[docs/backup-and-restore.md](docs/backup-and-restore.md) has the whole procedure:
+what to dump, how to get a point-in-time snapshot out of the replica set, where
+the compose volume lives and why you should not copy it, and the restore
+walkthrough that ends at the check above. It is written and checked but not yet
+proven: nobody has run it end to end against a real deployment, and the page says
+so at the top until somebody has.
+
 ## Checks
 
 ```bash
