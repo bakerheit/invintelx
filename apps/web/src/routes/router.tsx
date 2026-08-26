@@ -4,6 +4,7 @@ import { ProtectedRoute, PublicOnlyRoute } from '@/features/auth/ProtectedRoute'
 import { LoginPage } from '@/features/auth/LoginPage';
 import { RegisterPage } from '@/features/auth/RegisterPage';
 import { ItemsPage } from '@/features/items/ItemsPage';
+import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { NotFoundPage } from './NotFoundPage';
 import { RouteError } from './RouteError';
 
@@ -25,9 +26,8 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
-          // Items is the only built screen, so it is the landing page until the
-          // dashboard epic lands.
-          { path: '/', element: <Navigate to="/items" replace /> },
+          { path: '/', element: <Navigate to="/dashboard" replace /> },
+          { path: '/dashboard', element: <DashboardPage /> },
           { path: '/items', element: <ItemsPage /> },
         ],
       },

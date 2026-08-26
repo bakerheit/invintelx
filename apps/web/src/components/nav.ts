@@ -18,7 +18,7 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard, planned: true },
+  { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
   { label: 'Items', to: '/items', icon: Package },
   { label: 'Locations', to: '/locations', icon: MapPin, planned: true },
   { label: 'Movements', to: '/movements', icon: ArrowLeftRight, planned: true },

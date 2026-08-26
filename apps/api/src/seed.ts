@@ -7,7 +7,21 @@
 import { ObjectId } from 'mongodb';
 import type { UnitOfMeasure } from '@invintelx/shared';
 import { env } from './env.js';
-import { connect, disconnect, ensureIndexes, items, sessions, users, type ItemDoc } from './db.js';
+import {
+  connect,
+  disconnect,
+  ensureIndexes,
+  items,
+  locations,
+  movements,
+  rebuildStockLevels,
+  sessions,
+  stockLevels,
+  users,
+  type ItemDoc,
+  type LocationDoc,
+  type MovementDoc,
+} from './db.js';
 import { hashPassword } from './lib/password.js';
 
 const DEMO_EMAIL = 'demo@invintelx.org';
@@ -67,6 +81,98 @@ const CATALOG: SeedItem[] = [
   { sku: 'BRICK-CMN', name: 'Common brick', category: 'Aggregates', unitOfMeasure: 'each', costCents: 58, priceCents: 139, reorderPoint: 2000, reorderQuantity: 5000 },
 ];
 
+/**
+ * Deterministic pseudo-random, so the demo dataset is identical on every run.
+ * Math.random would make "why does the dashboard look different" a question
+ * nobody can answer.
+ */
+function makeRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    // xorshift32
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    state >>>= 0;
+    return state / 0x1_0000_0000;
+  };
+}
+
+const HISTORY_DAYS = 120;
+
+/**
+ * Build a plausible ledger: an opening receipt, daily consumption with
+ * variability, and periodic replenishment that stops early for a few SKUs so
+ * the action list has something real to rank.
+ */
+function buildLedger(
+  item: ItemDoc,
+  bins: LocationDoc[],
+  actorId: ObjectId,
+  actorName: string,
+  now: Date,
+  random: () => number,
+): MovementDoc[] {
+  const bin = bins[Math.floor(random() * bins.length)] ?? bins[0];
+  if (!bin) return [];
+
+  const docs: MovementDoc[] = [];
+  const push = (quantity: number, type: 'receipt' | 'issue', daysAgo: number, reference: string) => {
+    const occurredAt = new Date(now);
+    occurredAt.setUTCDate(occurredAt.getUTCDate() - daysAgo);
+    docs.push({
+      _id: new ObjectId(),
+      itemId: item._id,
+      itemSku: item.sku,
+      itemName: item.name,
+      locationId: bin._id,
+      locationCode: bin.code,
+      quantity: type === 'issue' ? -quantity : quantity,
+      type,
+      reference,
+      note: '',
+      occurredAt,
+      actorId,
+      actorName,
+      createdAt: occurredAt,
+    });
+  };
+
+  // Roughly a quarter of the catalogue is left to run down, so the dashboard
+  // has genuine urgency rather than a uniformly healthy list.
+  const runsDown = random() < 0.28;
+  const dailyRate = Math.max(1, Math.round((item.reorderPoint / 14) * (0.5 + random())));
+
+  let onHand = Math.round(item.reorderPoint * 3 + item.reorderQuantity);
+  push(onHand, 'receipt', HISTORY_DAYS, 'OPENING');
+
+  for (let daysAgo = HISTORY_DAYS - 1; daysAgo >= 0; daysAgo -= 1) {
+    // Consumption is lumpy, and weekends are quiet in most warehouses.
+    const dayOfWeek = new Date(now.getTime() - daysAgo * 86_400_000).getUTCDay();
+    const quiet = dayOfWeek === 0 || dayOfWeek === 6;
+    if (quiet && random() < 0.8) continue;
+    if (random() < 0.25) continue;
+
+    // Never issue more than is there. Real warehouses do go negative, and the
+    // API allows it deliberately, but demo data that ships broken teaches the
+    // reader the wrong thing about the product.
+    const wanted = Math.max(1, Math.round(dailyRate * (0.4 + random() * 1.4)));
+    const quantity = Math.min(wanted, onHand);
+    if (quantity > 0) {
+      push(quantity, 'issue', daysAgo, '');
+      onHand -= quantity;
+    }
+
+    const replenishStops = runsDown ? 30 : 0;
+    if (daysAgo > replenishStops && random() < 0.05) {
+      push(item.reorderQuantity, 'receipt', daysAgo, 'REPLEN');
+      onHand += item.reorderQuantity;
+    }
+  }
+
+  return docs;
+}
+
 async function main(): Promise<void> {
   if (env.NODE_ENV === 'production') {
     console.error('Refusing to seed a production database.');
@@ -79,11 +185,19 @@ async function main(): Promise<void> {
   console.log(`Seeding ${env.MONGODB_DB}...`);
 
   // Wipe first so the seed is repeatable rather than accumulating duplicates.
-  await Promise.all([items().deleteMany({}), users().deleteMany({}), sessions().deleteMany({})]);
+  await Promise.all([
+    items().deleteMany({}),
+    users().deleteMany({}),
+    sessions().deleteMany({}),
+    locations().deleteMany({}),
+    movements().deleteMany({}),
+    stockLevels().deleteMany({}),
+  ]);
 
   const now = new Date();
+  const adminId = new ObjectId();
   await users().insertOne({
-    _id: new ObjectId(),
+    _id: adminId,
     email: DEMO_EMAIL,
     name: 'Demo Admin',
     passwordHash: await hashPassword(DEMO_PASSWORD),
@@ -112,7 +226,78 @@ async function main(): Promise<void> {
   }));
   await items().insertMany(docs);
 
+  // One site, two zones, four bins. Enough shape to exercise the hierarchy
+  // without turning the seed into a warehouse layout exercise.
+  const siteId = new ObjectId();
+  const site: LocationDoc = {
+    _id: siteId,
+    code: 'MAIN',
+    name: 'Main warehouse',
+    type: 'site',
+    parentId: null,
+    path: [siteId],
+    pathLabel: 'MAIN',
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const zoneDefs = [
+    { code: 'RACK', name: 'Racking' },
+    { code: 'YARD', name: 'Outside yard' },
+  ];
+  const zones: LocationDoc[] = zoneDefs.map((zone) => {
+    const id = new ObjectId();
+    return {
+      _id: id,
+      code: zone.code,
+      name: zone.name,
+      type: 'zone' as const,
+      parentId: siteId,
+      path: [siteId, id],
+      pathLabel: `MAIN / ${zone.code}`,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+  });
+
+  const bins: LocationDoc[] = zones.flatMap((zone) =>
+    ['01', '02'].map((suffix) => {
+      const id = new ObjectId();
+      const code = `${zone.code}-${suffix}`;
+      return {
+        _id: id,
+        code,
+        name: `Bin ${code}`,
+        type: 'bin' as const,
+        parentId: zone._id,
+        path: [...zone.path, id],
+        pathLabel: `${zone.pathLabel} / ${code}`,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+    }),
+  );
+
+  await locations().insertMany([site, ...zones, ...bins]);
+
+  // Any fixed value will do; what matters is that it never changes.
+  const random = makeRandom(0xc0ffee);
+  const ledger = docs.flatMap((item) =>
+    buildLedger(item, bins, adminId, 'Demo Admin', now, random),
+  );
+  await movements().insertMany(ledger);
+
+  // Derive on-hand from the ledger rather than writing it, which is the same
+  // path production uses and proves the projection is reproducible.
+  const rebuilt = await rebuildStockLevels();
+
   console.log(`  ${docs.length} items`);
+  console.log(`  ${1 + zones.length + bins.length} locations`);
+  console.log(`  ${ledger.length} movements over ${HISTORY_DAYS} days`);
+  console.log(`  ${rebuilt.levels} stock levels projected from the ledger`);
   console.log(`  1 user: ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
   console.log('Done.');
 
