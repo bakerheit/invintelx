@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { ObjectId } from 'mongodb';
 import { SERVICE_LEVEL_Z } from '@invintelx/shared';
-import { statsFromSeries, suggestReorder } from './analytics.js';
+// From the pure module deliberately: importing analytics.js would pull in
+// db.js and its env parsing, which is what broke CI.
+import { statsFromSeries, suggestReorder } from './demand.js';
 import type { ItemDoc } from '../db.js';
 
 /** Fixed clock. A window relative to "now" is untestable without one. */
