@@ -24,6 +24,13 @@ const envSchema = z.object({
   MONGODB_DB: z.string().min(1).default('invintelx'),
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
   WEB_ORIGIN: z.string().url().default('http://localhost:5173'),
+  /*
+   * Where the built web app lives, for the single-origin deployment where this
+   * process serves it. Unset means "look next door at apps/web/dist, and if
+   * there is nothing there serve only /api" - which is the development case,
+   * and the case where a reverse proxy serves the assets instead.
+   */
+  WEB_DIST: z.string().min(1).optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

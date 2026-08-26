@@ -86,6 +86,72 @@ The web app is on <http://localhost:5173> and proxies `/api` to the API on port
 Sign in with `demo@invintelx.org` / `invintelx-demo-password`, or register a new
 account — **the first account created on an instance becomes the admin.**
 
+## Running it outside a dev checkout
+
+Vite is a development server and is not the answer in production. Instead the
+API serves the built web app itself:
+
+```bash
+pnpm build                        # builds apps/web/dist and apps/api/dist
+NODE_ENV=production node apps/api/dist/index.js
+```
+
+> **Known issue.** That second command does not work yet, for a reason that has
+> nothing to do with serving the frontend: `packages/shared` declares
+> `./src/index.ts` as its entry point and emits no JavaScript, so the compiled
+> API asks Node to import a TypeScript file and Node refuses. Development is
+> unaffected — `tsx` transpiles it. Packaging a runnable build is tracked
+> separately.
+
+One process, one port, one origin. `/api/*` is the API; everything else is
+answered from `apps/web/dist`, falling through to `index.html` so that
+refreshing the page on `/items/abc123` still loads the app instead of 404ing.
+Same origin is also what lets the session cookie stay `SameSite=Lax` with no
+CORS arrangement at all.
+
+The API finds `apps/web/dist` on its own. Set `WEB_DIST` only if the assets live
+somewhere else — and note that pointing it at a directory with no `index.html`
+is a boot failure rather than a warning, because an instance that 404s every
+page is not a useful thing to have started.
+
+Set `WEB_ORIGIN` to the public URL of the instance, and `NODE_ENV=production`,
+which is what turns on the `Secure` flag for the session cookie and makes the
+API trust one layer of `X-Forwarded-For` for rate-limiting.
+
+Static files are served with cache headers that assume a Vite build: the hashed
+files under `assets/` are immutable and cached for a year, while `index.html`
+and anything else keeping its name across releases is revalidated every time —
+otherwise an upgrade would never reach a browser that had been there before.
+
+### Putting a reverse proxy in front
+
+An option, not a requirement. Terminating TLS in nginx or Caddy and proxying
+everything to the API needs no InvIntelX configuration beyond the above:
+
+```
+# Caddy
+invintelx.example.com {
+  reverse_proxy localhost:3001
+}
+```
+
+If you would rather the proxy served the static files itself, point it at a copy
+of `apps/web/dist` and route `/api` to the API. Both must answer on the **same
+host and port** as far as the browser is concerned: split them across two
+origins and the session cookie stops being sent, and that topology additionally
+needs `WEB_ORIGIN` set to the web origin and `SameSite=None; Secure` cookies,
+which is not currently wired up.
+
+In that arrangement the API will still serve its own copy of the assets if
+`apps/web/dist` happens to sit next to it, which is harmless — the proxy never
+asks it to. If you would rather it did not, build only the API with
+`pnpm --filter @invintelx/api build` and it will log that it is serving `/api`
+only.
+
+None of this is a supported deployment yet — see the status note at the top.
+There is no image, no release tag and no upgrade path. It is how you run it
+today, honestly described.
+
 ## Checks
 
 ```bash
