@@ -71,16 +71,17 @@ export function useItem(id: string) {
 }
 
 /** On-hand for one item, broken down by the bins holding it. */
-export function useItemStock(id: string) {
+export function useItemStock(id: string, enabled = true) {
   return useQuery({
-    queryKey: ['items', 'stock', id],
+    queryKey: queryKeys.items.stock(id),
     queryFn: () => apiRequest(itemStockSchema, `/movements/stock/${id}`),
+    enabled: enabled && id !== '',
   });
 }
 
 export function useItemHistory(id: string, page: number, pageSize = 20) {
   return useQuery({
-    queryKey: ['items', 'history', id, page, pageSize],
+    queryKey: queryKeys.items.history(id, page, pageSize),
     queryFn: () =>
       apiRequest(
         movementHistoryResponseSchema,
@@ -92,7 +93,7 @@ export function useItemHistory(id: string, page: number, pageSize = 20) {
 
 export function useItemDemand(id: string) {
   return useQuery({
-    queryKey: ['items', 'demand', id],
+    queryKey: queryKeys.items.demand(id),
     queryFn: () => apiRequest(itemDemandResponseSchema, `/analytics/demand/${id}`),
   });
 }

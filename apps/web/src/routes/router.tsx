@@ -5,6 +5,7 @@ import { LoginPage } from '@/features/auth/LoginPage';
 import { RegisterPage } from '@/features/auth/RegisterPage';
 import { ItemsPage } from '@/features/items/ItemsPage';
 import { ItemDetailPage } from '@/features/items/ItemDetailPage';
+import { MovementsPage } from '@/features/movements/MovementsPage';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { NotFoundPage } from './NotFoundPage';
 import { RouteError } from './RouteError';
@@ -31,6 +32,7 @@ export const router = createBrowserRouter([
           { path: '/dashboard', element: <DashboardPage /> },
           { path: '/items', element: <ItemsPage /> },
           { path: '/items/:id', element: <ItemDetailPage /> },
+          { path: '/movements', element: <MovementsPage /> },
         ],
       },
     ],
