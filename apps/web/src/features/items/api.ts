@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   itemDemandResponseSchema,
+  itemImportPreviewSchema,
+  itemImportResultSchema,
   itemListResponseSchema,
   itemSchema,
   itemStockSchema,
   movementHistoryResponseSchema,
   type CreateItemInput,
   type Item,
+  type ItemImportRequest,
   type UpdateItemInput,
 } from '@invintelx/shared';
 import { apiRequest, toQueryString } from '@/lib/api';
@@ -61,6 +64,43 @@ export function useRestoreItem() {
       apiRequest(itemSchema, `/items/${item.id}/restore`, { method: 'POST' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.items.all }),
   });
+}
+
+/**
+ * What the file would do. Deliberately not a query: it is not cacheable state,
+ * it is an answer to one particular file the user is holding, and asking again
+ * after somebody else has edited an item should give a different answer.
+ */
+export function usePreviewImport() {
+  return useMutation({
+    mutationFn: (input: ItemImportRequest) =>
+      apiRequest(itemImportPreviewSchema, '/items/import/preview', {
+        method: 'POST',
+        body: input,
+      }),
+  });
+}
+
+export function useCommitImport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ItemImportRequest) =>
+      apiRequest(itemImportResultSchema, '/items/import', { method: 'POST', body: input }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.items.all }),
+  });
+}
+
+/**
+ * The export is a plain link rather than a fetch: the browser already knows how
+ * to save a file the server marked as an attachment, and doing it by hand means
+ * holding the whole thing in memory as a blob for no gain.
+ */
+export function itemsExportHref(query: Pick<ItemsQuery, 'q' | 'category' | 'status'>): string {
+  return `/api/items/export.csv${toQueryString({
+    q: query.q,
+    category: query.category,
+    status: query.status,
+  })}`;
 }
 
 export function useItem(id: string) {
