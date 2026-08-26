@@ -43,6 +43,13 @@ this release is on the only shape the data has ever had.
   to move stock.
 - Analytics over the ledger: demand series, days of cover, reorder suggestions
   and an action list of the items that need attention today.
+- A landing dashboard that ranks what needs a decision: SKUs that are out of
+  stock, SKUs at or below their reorder point, and dead stock worth money —
+  each row linking to the item it is about. Total inventory value and a
+  movement-volume sparkline sit under the lists as context. Served by
+  `GET /api/analytics/dashboard`, which takes `windowDays`, `leadTimeDays`,
+  `serviceLevel`, `deadStockDays` and `limit`. Each list reports the full count
+  alongside the rows it shows, so a shortlist is never mistaken for the total.
 - A deliberate act between deploying an instance and it having an
   administrator. While an instance has no accounts the API mints a **setup
   token** at each boot and prints it; registration will not create an
@@ -60,6 +67,12 @@ this release is on the only shape the data has ever had.
 
 ### Known limitations
 
+- The dashboard cannot show incoming deliveries running late. Purchase orders
+  do not exist yet, so nothing in the product knows what is on its way or when
+  it was promised. The screen says so where that section would be, rather than
+  leaving it out and reading as "no delivery is late".
+- Dashboard figures count the active catalogue only, inventory value included.
+  Stock left on an archived SKU is invisible on that screen.
 - No published container image and no `docker compose up` that runs the app —
   `docker-compose.yml` starts MongoDB for development and nothing else.
 - No upgrade has been exercised across a version boundary, because there is no

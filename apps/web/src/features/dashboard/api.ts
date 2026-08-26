@@ -1,11 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
-import { actionListResponseSchema, type ActionListQuery } from '@invintelx/shared';
+import { dashboardResponseSchema, type DashboardQuery } from '@invintelx/shared';
 import { apiRequest, toQueryString } from '@/lib/api';
+import { queryKeys } from '@/lib/queryKeys';
 
-export function useActionList(query: Partial<ActionListQuery> = {}) {
+/**
+ * One request for the whole landing screen.
+ *
+ * The four lists and both context figures are read from a single pass over the
+ * catalogue on the server, so they cannot disagree with each other about what
+ * is on the shelf — which four separate queries firing a few hundred
+ * milliseconds apart absolutely can.
+ */
+export function useDashboard(query: Partial<DashboardQuery> = {}) {
   return useQuery({
-    queryKey: ['action-list', query],
+    queryKey: queryKeys.dashboard(query),
     queryFn: () =>
-      apiRequest(actionListResponseSchema, `/analytics/action-list${toQueryString({ ...query })}`),
+      apiRequest(dashboardResponseSchema, `/analytics/dashboard${toQueryString({ ...query })}`),
   });
 }
