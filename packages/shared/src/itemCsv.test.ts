@@ -154,6 +154,24 @@ describe('planItemImport', () => {
     });
   });
 
+  it('leaves a field alone when the row ends before its column, rather than clearing it', () => {
+    // Three headers, one value: the row never mentions description or Colour,
+    // so neither may be touched. An empty cell clears; a missing cell does not.
+    const result = plan('sku,description,attr:Colour\nBOLT-M6-30\n', [existing()]);
+    expect(result.rows[0]?.action).toBe('unchanged');
+    expect(result.rows[0]?.changedFields).toEqual([]);
+    expect(result.rows[0]?.write).toBeUndefined();
+  });
+
+  it('still clears a text field the row wrote as empty, next to one it never reached', () => {
+    const result = plan('sku,description,category\nBOLT-M6-30,\n', [existing()]);
+    expect(result.rows[0]?.write).toEqual({
+      kind: 'update',
+      sku: 'BOLT-M6-30',
+      changes: { description: '' },
+    });
+  });
+
   it('defaults the typed fields a new item leaves unset rather than refusing the row', () => {
     const result = plan('sku,name\nNUT-M6,Hex nut M6\n');
     expect(result.rows[0]?.write).toEqual({

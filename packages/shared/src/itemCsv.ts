@@ -309,6 +309,10 @@ export interface RowResolution {
  * empty cell means "not supplied", so it takes the default on a create and is
  * left alone on an update. Blanking a price to zero by accident costs real
  * money; blanking a description costs nothing.
+ *
+ * A cell the row does not have at all - because it ended before that column -
+ * is "not supplied" for every kind of field, text included. Only a cell the
+ * file actually wrote as empty can clear anything.
  */
 function resolveRow(record: CsvRecord, mapping: ItemCsvMapping): RowResolution {
   const issues: ItemImportIssue[] = [];
@@ -316,10 +320,19 @@ function resolveRow(record: CsvRecord, mapping: ItemCsvMapping): RowResolution {
   const attributeSets: Record<string, string> = {};
   const attributeRemovals: string[] = [];
 
+  /*
+   * `undefined` means the file said nothing about this target for this row -
+   * either no column is mapped to it, or the row stopped before reaching that
+   * column. A row shorter than the header is not the same as a row of empty
+   * cells: the short row never mentions the missing columns, so it must not
+   * clear them. Left as `''` this quietly wiped a description off every item
+   * whose row ran out of commas early.
+   */
   const cell = (target: string): string | undefined => {
     const index = mapping[target];
     if (index === undefined) return undefined;
-    return (record.fields[index] ?? '').trim();
+    const raw = record.fields[index];
+    return raw === undefined ? undefined : raw.trim();
   };
 
   const fail = (target: string, message: string) => issues.push({ target, message });
@@ -397,7 +410,10 @@ function resolveRow(record: CsvRecord, mapping: ItemCsvMapping): RowResolution {
   for (const target of Object.keys(mapping)) {
     if (!isAttributeTarget(target)) continue;
     const key = target.slice(ATTRIBUTE_COLUMN_PREFIX.length);
-    const value = cell(target) ?? '';
+    const value = cell(target);
+    // Absent, not empty: a row that never reached this column is not asking for
+    // the attribute to be removed.
+    if (value === undefined) continue;
     if (value === '') attributeRemovals.push(key);
     else attributeSets[key] = value;
   }

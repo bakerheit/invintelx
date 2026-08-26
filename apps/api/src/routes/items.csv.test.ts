@@ -144,6 +144,26 @@ describe('item import', () => {
     expect(after?.updatedAt).toEqual(before?.updatedAt);
   });
 
+  it('does not clear a field the row ran out of columns before reaching', async () => {
+    const cookie = await signIn();
+    const header = 'sku,name,description\r\n';
+    await commit(cookie, `${header}BOLT-M6-30,Hex bolt M6 x 30mm,Zinc plated\r\n`).expect(200);
+
+    // Same three columns in the header, but this row stops after the SKU. It
+    // says nothing about the description, so the description has to survive.
+    expect((await commit(cookie, `${header}BOLT-M6-30\r\n`).expect(200)).body).toEqual({
+      created: 0,
+      updated: 0,
+      unchanged: 1,
+    });
+    expect((await db.items().findOne({ sku: 'BOLT-M6-30' }))?.description).toBe('Zinc plated');
+
+    // A cell the file actually wrote as empty still clears it: blanking a
+    // description in the spreadsheet has to mean something.
+    await commit(cookie, `${header}BOLT-M6-30,Hex bolt M6 x 30mm,\r\n`).expect(200);
+    expect((await db.items().findOne({ sku: 'BOLT-M6-30' }))?.description).toBe('');
+  });
+
   it('rejects the whole file on a parse error and names the line', async () => {
     const cookie = await signIn();
 
