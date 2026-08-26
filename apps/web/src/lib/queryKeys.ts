@@ -9,6 +9,7 @@
  */
 export const queryKeys = {
   session: ['session'] as const,
+  setupStatus: ['auth', 'setup'] as const,
   items: {
     all: ['items'] as const,
     list: (query: Record<string, unknown>) => ['items', 'list', query] as const,

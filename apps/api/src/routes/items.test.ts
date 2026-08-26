@@ -35,6 +35,10 @@ beforeAll(async () => {
   process.env.MONGODB_URI = replSet.getUri();
   process.env.MONGODB_DB = 'invintelx_test';
   process.env.SESSION_SECRET = 'test-secret-that-is-definitely-long-enough';
+  // These tests are about items, not about claiming an instance, so they use
+  // the open bootstrap and register their way to an admin. The token bootstrap
+  // that a self-hosted instance gets by default is auth.setup.test.ts.
+  process.env.FIRST_ADMIN_SETUP = 'open';
 
   db = await import('../db.js');
   await db.connect();
@@ -58,7 +62,7 @@ beforeEach(async () => {
 });
 
 describe('auth', () => {
-  it('makes the first registered user an admin and everyone after a member', async () => {
+  it('with the open bootstrap, makes the first registered user an admin and everyone after a member', async () => {
     const first = await request(app).post('/api/auth/register').send(CREDENTIALS).expect(201);
     expect(first.body.user.role).toBe('admin');
 

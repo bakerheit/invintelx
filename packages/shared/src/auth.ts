@@ -34,8 +34,27 @@ export const registerInputSchema = z.object({
   email: emailSchema,
   name: z.string().min(1, 'Name is required').max(120).trim(),
   password: passwordSchema,
+  /**
+   * Only meaningful for the registration that creates an instance's
+   * administrator, and only when that instance requires one. Everything else
+   * ignores it. See `setupStatusSchema` for how a client finds out.
+   */
+  setupToken: z.string().trim().max(200).optional(),
 });
 export type RegisterInput = z.infer<typeof registerInputSchema>;
+
+/**
+ * What an unauthenticated client may know about an instance's bootstrap state,
+ * so the registration form can ask for the right things and say something true
+ * about what the account it is about to create will be.
+ */
+export const setupStatusSchema = z.object({
+  /** True while the instance has no accounts, so the next one becomes the administrator. */
+  firstAccount: z.boolean(),
+  /** True when that first registration must present the setup token from the server log. */
+  setupTokenRequired: z.boolean(),
+});
+export type SetupStatus = z.infer<typeof setupStatusSchema>;
 
 export const loginInputSchema = z.object({
   email: emailSchema,

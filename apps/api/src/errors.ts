@@ -28,8 +28,8 @@ export class UnauthorizedError extends AppError {
 }
 
 export class ForbiddenError extends AppError {
-  constructor(message = 'You do not have permission to do that') {
-    super(403, 'forbidden', message);
+  constructor(message = 'You do not have permission to do that', fields?: Record<string, string>) {
+    super(403, 'forbidden', message, fields);
   }
 }
 

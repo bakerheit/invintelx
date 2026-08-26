@@ -29,6 +29,20 @@ export interface SessionDoc {
   expiresAt: Date;
 }
 
+/**
+ * The one-shot credential that lets a registration create an instance's
+ * administrator. There is only ever one, hence the fixed `_id`: consuming it is
+ * a single atomic delete, which is what keeps it one-shot under concurrency.
+ */
+export interface SetupTokenDoc {
+  _id: typeof SETUP_TOKEN_ID;
+  /** SHA-256 of the token, for the same reason sessions store a hash. */
+  tokenHash: string;
+  createdAt: Date;
+}
+
+export const SETUP_TOKEN_ID = 'setup';
+
 export interface ItemDoc {
   _id: ObjectId;
   sku: string;
@@ -132,6 +146,8 @@ export async function disconnect(): Promise<void> {
 
 export const users = (): Collection<UserDoc> => getDb().collection<UserDoc>('users');
 export const sessions = (): Collection<SessionDoc> => getDb().collection<SessionDoc>('sessions');
+export const setupTokens = (): Collection<SetupTokenDoc> =>
+  getDb().collection<SetupTokenDoc>('setupTokens');
 export const items = (): Collection<ItemDoc> => getDb().collection<ItemDoc>('items');
 export const locations = (): Collection<LocationDoc> => getDb().collection<LocationDoc>('locations');
 export const movements = (): Collection<MovementDoc> => getDb().collection<MovementDoc>('movements');
