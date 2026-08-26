@@ -31,6 +31,44 @@ export const positiveQuantitySchema = z
   .positive('Quantity must be greater than zero')
   .max(1_000_000_000);
 
+/**
+ * Why stock was adjusted. A closed list, not free text.
+ *
+ * Free-text reasons are how shrinkage becomes untraceable: nobody can total
+ * "damaged" across a year when it is spelled six ways.
+ */
+export const ADJUSTMENT_REASONS = [
+  'damaged',
+  'lost',
+  'found',
+  'miscount',
+  'expired',
+  'other',
+] as const;
+export const adjustmentReasonSchema = z.enum(ADJUSTMENT_REASONS);
+export type AdjustmentReason = z.infer<typeof adjustmentReasonSchema>;
+
+/**
+ * A transfer is a pair, and reversing one leg of it invents or destroys stock.
+ *
+ * Learned from a peer review of a parallel implementation, where reversing the
+ * out-leg of a 5-unit transfer left -5 +5 +5 on the books: five units nobody
+ * ever received. The remedy for a wrong transfer is the opposite transfer,
+ * which is written as a pair in one transaction.
+ */
+export const REVERSIBLE_MOVEMENT_TYPES: readonly MovementType[] = [
+  'receipt',
+  'issue',
+  'adjustment',
+];
+
+export function isReversible(type: MovementType): boolean {
+  return REVERSIBLE_MOVEMENT_TYPES.includes(type);
+}
+
+export const TRANSFER_REVERSAL_MESSAGE =
+  'A transfer moves stock as a pair, so reversing one leg alone would invent or destroy stock. Post the opposite transfer instead.';
+
 export const movementSchema = z.object({
   id: objectIdSchema,
   itemId: objectIdSchema,
@@ -44,6 +82,12 @@ export const movementSchema = z.object({
   /** Free-form pointer at whatever caused this — a PO line, a count sheet. */
   reference: z.string(),
   note: z.string(),
+  /** Both legs of a transfer carry the same group, so the pair can be found. */
+  groupId: objectIdSchema.nullable(),
+  /** Set when this row exists to compensate an earlier one. */
+  reversesId: objectIdSchema.nullable(),
+  /** Only meaningful on an adjustment. */
+  reason: adjustmentReasonSchema.nullable(),
   occurredAt: isoDateSchema,
   actorId: objectIdSchema,
   actorName: z.string(),
@@ -64,6 +108,40 @@ export type ReceiveInput = z.infer<typeof receiveInputSchema>;
 
 export const issueInputSchema = receiveInputSchema;
 export type IssueInput = z.infer<typeof issueInputSchema>;
+
+export const transferInputSchema = z
+  .object({
+    itemId: objectIdSchema,
+    fromLocationId: objectIdSchema,
+    toLocationId: objectIdSchema,
+    quantity: positiveQuantitySchema,
+    reference: z.string().trim().max(120).default(''),
+    note: z.string().trim().max(500).default(''),
+    occurredAt: isoDateSchema.optional(),
+  })
+  // A transfer to the same bin is a no-op that still writes two rows and two
+  // projection updates, so it is rejected rather than quietly recorded.
+  .refine((v) => v.fromLocationId !== v.toLocationId, {
+    message: 'Pick two different bins',
+    path: ['toLocationId'],
+  });
+export type TransferInput = z.infer<typeof transferInputSchema>;
+
+export const adjustInputSchema = z.object({
+  itemId: objectIdSchema,
+  locationId: objectIdSchema,
+  /** Signed: negative writes stock off, positive writes it on. */
+  quantity: movementQuantitySchema,
+  reason: adjustmentReasonSchema,
+  note: z.string().trim().max(500).default(''),
+  occurredAt: isoDateSchema.optional(),
+});
+export type AdjustInput = z.infer<typeof adjustInputSchema>;
+
+export const reverseInputSchema = z.object({
+  note: z.string().trim().max(500).default(''),
+});
+export type ReverseInput = z.infer<typeof reverseInputSchema>;
 
 export const listMovementsQuerySchema = paginationQuerySchema.extend({
   itemId: objectIdSchema.optional(),

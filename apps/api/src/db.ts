@@ -1,5 +1,12 @@
 import { MongoClient, ObjectId, type Collection, type Db } from 'mongodb';
-import type { ItemStatus, LocationType, MovementType, Role, UnitOfMeasure } from '@invintelx/shared';
+import type {
+  AdjustmentReason,
+  ItemStatus,
+  LocationType,
+  MovementType,
+  Role,
+  UnitOfMeasure,
+} from '@invintelx/shared';
 import { env } from './env.js';
 
 export interface UserDoc {
@@ -66,6 +73,12 @@ export interface MovementDoc {
   type: MovementType;
   reference: string;
   note: string;
+  /** Both legs of a transfer share this, so the pair can be found from either. */
+  groupId: ObjectId | null;
+  /** Set when this row compensates an earlier one. */
+  reversesId: ObjectId | null;
+  /** Only meaningful on an adjustment. */
+  reason: AdjustmentReason | null;
   /** When the stock actually moved, which is not always when it was recorded. */
   occurredAt: Date;
   actorId: ObjectId;
@@ -155,6 +168,9 @@ export async function ensureIndexes(): Promise<void> {
   await movements().createIndex({ itemId: 1, occurredAt: -1 }, { name: 'by_item_occurred' });
   await movements().createIndex({ locationId: 1, occurredAt: -1 }, { name: 'by_location_occurred' });
   await movements().createIndex({ type: 1, occurredAt: -1 }, { name: 'by_type_occurred' });
+  // Sparse: only transfers carry a group, and only reversals carry a target.
+  await movements().createIndex({ groupId: 1 }, { name: 'by_group', sparse: true });
+  await movements().createIndex({ reversesId: 1 }, { name: 'by_reverses', sparse: true });
 
   await stockLevels().createIndex(
     { itemId: 1, locationId: 1 },

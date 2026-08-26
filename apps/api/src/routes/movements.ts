@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { ObjectId, type Filter } from 'mongodb';
 import {
+  adjustInputSchema,
   issueInputSchema,
+  reverseInputSchema,
+  transferInputSchema,
   itemStockSchema,
   listMovementsQuerySchema,
   movementHistoryResponseSchema,
@@ -14,13 +17,20 @@ import { movements, type MovementDoc } from '../db.js';
 import { NotFoundError, UnauthorizedError } from '../errors.js';
 import { asyncHandler, parseOrThrow } from '../lib/http.js';
 import { requireRole } from '../middleware/auth.js';
-import { postMovement, stockForItem } from '../services/ledger.js';
+import { postMovement, postReversal, postTransfer, stockForItem } from '../services/ledger.js';
 import { toMovement, toStockLevel } from '../serializers.js';
 import { z } from 'zod';
 
 export const movementsRouter: Router = Router();
 
 const postedSchema = z.object({ movement: movementSchema, balanceAfter: z.number().int() });
+
+const transferResponseSchema = z.object({
+  out: movementSchema,
+  in: movementSchema,
+  fromBalance: z.number().int(),
+  toBalance: z.number().int(),
+});
 
 function actorOf(req: { user?: { id: string; name: string } }) {
   if (!req.user) throw new UnauthorizedError();
@@ -105,6 +115,77 @@ movementsRouter.post(
       occurredAt: input.occurredAt ? new Date(input.occurredAt) : new Date(),
       ...actorOf(req),
     });
+    res
+      .status(201)
+      .json(postedSchema.parse({ movement: toMovement(result.movement), balanceAfter: result.balanceAfter }));
+  }),
+);
+
+/**
+ * Move stock between two bins. One transaction, two rows, sum zero.
+ */
+movementsRouter.post(
+  '/transfer',
+  requireRole('member'),
+  asyncHandler(async (req, res) => {
+    const input = parseOrThrow(transferInputSchema, req.body);
+    const result = await postTransfer({
+      itemId: new ObjectId(input.itemId),
+      fromLocationId: new ObjectId(input.fromLocationId),
+      toLocationId: new ObjectId(input.toLocationId),
+      quantity: input.quantity,
+      reference: input.reference,
+      note: input.note,
+      occurredAt: input.occurredAt ? new Date(input.occurredAt) : new Date(),
+      ...actorOf(req),
+    });
+
+    res.status(201).json(
+      transferResponseSchema.parse({
+        out: toMovement(result.out),
+        in: toMovement(result.in),
+        fromBalance: result.fromBalance,
+        toBalance: result.toBalance,
+      }),
+    );
+  }),
+);
+
+/** Write stock on or off with a reason code from a fixed list. */
+movementsRouter.post(
+  '/adjust',
+  requireRole('member'),
+  asyncHandler(async (req, res) => {
+    const input = parseOrThrow(adjustInputSchema, req.body);
+    const result = await postMovement({
+      itemId: new ObjectId(input.itemId),
+      locationId: new ObjectId(input.locationId),
+      quantity: input.quantity,
+      type: 'adjustment',
+      reference: '',
+      note: input.note,
+      reason: input.reason,
+      occurredAt: input.occurredAt ? new Date(input.occurredAt) : new Date(),
+      ...actorOf(req),
+    });
+    res
+      .status(201)
+      .json(postedSchema.parse({ movement: toMovement(result.movement), balanceAfter: result.balanceAfter }));
+  }),
+);
+
+/**
+ * Correct a mistake by appending its opposite. The original stays.
+ */
+movementsRouter.post(
+  '/:id/reverse',
+  requireRole('member'),
+  asyncHandler(async (req, res) => {
+    const parsed = objectIdSchema.safeParse(req.params.id);
+    if (!parsed.success) throw new NotFoundError('No movement with that id');
+    const input = parseOrThrow(reverseInputSchema, req.body ?? {});
+
+    const result = await postReversal(new ObjectId(parsed.data), input.note, actorOf(req));
     res
       .status(201)
       .json(postedSchema.parse({ movement: toMovement(result.movement), balanceAfter: result.balanceAfter }));

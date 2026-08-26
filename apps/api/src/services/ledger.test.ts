@@ -343,3 +343,262 @@ describe('movement history', () => {
     expect(page2.body.data.map((m: { balanceAfter: number }) => m.balanceAfter)).toEqual([30, 20]);
   });
 });
+
+describe('transfer', () => {
+  it('conserves total stock — the pair sums to zero', async () => {
+    const itemId = await makeItem('XFER-1');
+    const [binA, binB] = [await makeBin('X-01A'), await makeBin('X-01B')];
+
+    await request(app)
+      .post('/api/movements/receive')
+      .set('Cookie', cookie)
+      .send({ itemId, locationId: binA, quantity: 100 })
+      .expect(201);
+
+    const before = await request(app)
+      .get(`/api/movements/stock/${itemId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+
+    const transfer = await request(app)
+      .post('/api/movements/transfer')
+      .set('Cookie', cookie)
+      .send({ itemId, fromLocationId: binA, toLocationId: binB, quantity: 30 })
+      .expect(201);
+
+    expect(transfer.body.fromBalance).toBe(70);
+    expect(transfer.body.toBalance).toBe(30);
+    expect(transfer.body.out.quantity + transfer.body.in.quantity).toBe(0);
+
+    const after = await request(app)
+      .get(`/api/movements/stock/${itemId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    // The whole point: moving stock does not change how much there is.
+    expect(after.body.totalOnHand).toBe(before.body.totalOnHand);
+  });
+
+  it('links both legs with one group id', async () => {
+    const itemId = await makeItem('XFER-2');
+    const [binA, binB] = [await makeBin('X-02A'), await makeBin('X-02B')];
+    await request(app)
+      .post('/api/movements/receive')
+      .set('Cookie', cookie)
+      .send({ itemId, locationId: binA, quantity: 10 })
+      .expect(201);
+
+    const transfer = await request(app)
+      .post('/api/movements/transfer')
+      .set('Cookie', cookie)
+      .send({ itemId, fromLocationId: binA, toLocationId: binB, quantity: 4 })
+      .expect(201);
+
+    expect(transfer.body.out.groupId).toBe(transfer.body.in.groupId);
+    expect(transfer.body.out.groupId).not.toBeNull();
+  });
+
+  it('refuses a transfer to the same bin', async () => {
+    const itemId = await makeItem('XFER-3');
+    const bin = await makeBin('X-03');
+    const response = await request(app)
+      .post('/api/movements/transfer')
+      .set('Cookie', cookie)
+      .send({ itemId, fromLocationId: bin, toLocationId: bin, quantity: 1 })
+      .expect(400);
+    expect(response.body.error.fields.toLocationId).toBeDefined();
+  });
+
+  it('writes neither leg when the destination is not a bin', async () => {
+    const itemId = await makeItem('XFER-4');
+    const binA = await makeBin('X-04A');
+    const site = await request(app)
+      .post('/api/locations')
+      .set('Cookie', cookie)
+      .send({ code: 'X-04-SITE-B', name: 'Site', type: 'site' })
+      .expect(201);
+
+    await request(app)
+      .post('/api/movements/receive')
+      .set('Cookie', cookie)
+      .send({ itemId, locationId: binA, quantity: 50 })
+      .expect(201);
+
+    await request(app)
+      .post('/api/movements/transfer')
+      .set('Cookie', cookie)
+      .send({ itemId, fromLocationId: binA, toLocationId: site.body.id, quantity: 10 })
+      .expect(400);
+
+    // Both ends are validated before either is written, so the source is intact.
+    const stock = await request(app)
+      .get(`/api/movements/stock/${itemId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(stock.body.totalOnHand).toBe(50);
+  });
+});
+
+describe('reversal', () => {
+  it('undoes a receipt by appending its opposite, leaving the original standing', async () => {
+    const [itemId, binId] = [await makeItem('REV-1'), await makeBin('R-01')];
+    const receipt = await request(app)
+      .post('/api/movements/receive')
+      .set('Cookie', cookie)
+      .send({ itemId, locationId: binId, quantity: 40 })
+      .expect(201);
+
+    const reversal = await request(app)
+      .post(`/api/movements/${receipt.body.movement.id}/reverse`)
+      .set('Cookie', cookie)
+      .send({ note: 'wrong pallet' })
+      .expect(201);
+
+    expect(reversal.body.balanceAfter).toBe(0);
+    expect(reversal.body.movement.quantity).toBe(-40);
+    expect(reversal.body.movement.reversesId).toBe(receipt.body.movement.id);
+
+    // Append-only: the original is still there, and history shows both.
+    const history = await request(app)
+      .get(`/api/movements/history/${itemId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(history.body.total).toBe(2);
+  });
+
+  it('refuses to reverse one leg of a transfer, which would invent stock', async () => {
+    const itemId = await makeItem('REV-2');
+    const [binA, binB] = [await makeBin('R-02A'), await makeBin('R-02B')];
+    await request(app)
+      .post('/api/movements/receive')
+      .set('Cookie', cookie)
+      .send({ itemId, locationId: binA, quantity: 20 })
+      .expect(201);
+    const transfer = await request(app)
+      .post('/api/movements/transfer')
+      .set('Cookie', cookie)
+      .send({ itemId, fromLocationId: binA, toLocationId: binB, quantity: 5 })
+      .expect(201);
+
+    /*
+     * The bug this exists for: reversing the out-leg alone would put binA back
+     * up by 5 while binB keeps its 5, leaving -5 +5 +5 — five units nobody
+     * received. Found by peer review of a parallel implementation.
+     */
+    const refused = await request(app)
+      .post(`/api/movements/${transfer.body.out.id}/reverse`)
+      .set('Cookie', cookie)
+      .send({})
+      .expect(400);
+    expect(refused.body.error.message).toMatch(/opposite transfer/i);
+
+    const stock = await request(app)
+      .get(`/api/movements/stock/${itemId}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(stock.body.totalOnHand).toBe(20);
+  });
+
+  it('reverses a reversal, because that is just another movement', async () => {
+    const [itemId, binId] = [await makeItem('REV-3'), await makeBin('R-03')];
+    const receipt = await request(app)
+      .post('/api/movements/receive')
+      .set('Cookie', cookie)
+      .send({ itemId, locationId: binId, quantity: 12 })
+      .expect(201);
+
+    const first = await request(app)
+      .post(`/api/movements/${receipt.body.movement.id}/reverse`)
+      .set('Cookie', cookie)
+      .send({})
+      .expect(201);
+    expect(first.body.balanceAfter).toBe(0);
+
+    const second = await request(app)
+      .post(`/api/movements/${first.body.movement.id}/reverse`)
+      .set('Cookie', cookie)
+      .send({})
+      .expect(201);
+    expect(second.body.balanceAfter).toBe(12);
+  });
+
+  it('404s on a movement that does not exist', async () => {
+    await request(app)
+      .post('/api/movements/not-a-real-id/reverse')
+      .set('Cookie', cookie)
+      .send({})
+      .expect(404);
+  });
+});
+
+describe('adjustment', () => {
+  it('writes stock off against a reason code', async () => {
+    const [itemId, binId] = [await makeItem('ADJ-1'), await makeBin('A-01')];
+    await request(app)
+      .post('/api/movements/receive')
+      .set('Cookie', cookie)
+      .send({ itemId, locationId: binId, quantity: 30 })
+      .expect(201);
+
+    const adjust = await request(app)
+      .post('/api/movements/adjust')
+      .set('Cookie', cookie)
+      .send({ itemId, locationId: binId, quantity: -4, reason: 'damaged' })
+      .expect(201);
+
+    expect(adjust.body.balanceAfter).toBe(26);
+    expect(adjust.body.movement.reason).toBe('damaged');
+    expect(adjust.body.movement.type).toBe('adjustment');
+  });
+
+  it('refuses a reason outside the fixed list', async () => {
+    const [itemId, binId] = [await makeItem('ADJ-2'), await makeBin('A-02')];
+    const response = await request(app)
+      .post('/api/movements/adjust')
+      .set('Cookie', cookie)
+      .send({ itemId, locationId: binId, quantity: -1, reason: 'because I said so' })
+      .expect(400);
+    expect(response.body.error.fields.reason).toBeDefined();
+  });
+});
+
+describe('the projection still reconciles after transfers and reversals', () => {
+  it('rebuilds to the same numbers', async () => {
+    const itemId = await makeItem('MIX-1');
+    const [binA, binB] = [await makeBin('M-01A'), await makeBin('M-01B')];
+
+    await request(app)
+      .post('/api/movements/receive')
+      .set('Cookie', cookie)
+      .send({ itemId, locationId: binA, quantity: 200 })
+      .expect(201);
+    await request(app)
+      .post('/api/movements/transfer')
+      .set('Cookie', cookie)
+      .send({ itemId, fromLocationId: binA, toLocationId: binB, quantity: 80 })
+      .expect(201);
+    const issue = await request(app)
+      .post('/api/movements/issue')
+      .set('Cookie', cookie)
+      .send({ itemId, locationId: binB, quantity: 25 })
+      .expect(201);
+    await request(app)
+      .post(`/api/movements/${issue.body.movement.id}/reverse`)
+      .set('Cookie', cookie)
+      .send({})
+      .expect(201);
+    await request(app)
+      .post('/api/movements/adjust')
+      .set('Cookie', cookie)
+      .send({ itemId, locationId: binA, quantity: -10, reason: 'miscount' })
+      .expect(201);
+
+    const before = await db.stockLevels().find({}).sort({ locationCode: 1 }).toArray();
+    await db.stockLevels().updateMany({}, { $set: { onHand: -12345 } });
+    await db.rebuildStockLevels();
+    const after = await db.stockLevels().find({}).sort({ locationCode: 1 }).toArray();
+
+    expect(after.map((l) => l.onHand)).toEqual(before.map((l) => l.onHand));
+    expect(after.find((l) => l.locationCode === 'M-01A')?.onHand).toBe(110);
+    expect(after.find((l) => l.locationCode === 'M-01B')?.onHand).toBe(80);
+  });
+});
