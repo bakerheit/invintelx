@@ -1,7 +1,13 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { ArrowLeft, ArrowDownRight, ArrowUpRight, Pencil } from 'lucide-react';
-import { formatCents, type Movement, type MovementWithBalance } from '@invintelx/shared';
+import { ArrowLeft, ArrowDownRight, ArrowUpRight, Pencil, Undo2 } from 'lucide-react';
+import {
+  formatCents,
+  isReversible,
+  TRANSFER_REVERSAL_MESSAGE,
+  type Movement,
+  type MovementWithBalance,
+} from '@invintelx/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,6 +19,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useAuth } from '@/features/auth/AuthProvider';
+import { ReverseDialog } from '@/features/movements/ReverseDialog';
+import { formatMovementDate } from '@/lib/dates';
 import { cn } from '@/lib/utils';
 import { useItem, useItemDemand, useItemHistory, useItemStock } from './api';
 import { DemandSparkline } from './DemandSparkline';
@@ -28,9 +37,12 @@ const MOVEMENT_LABEL: Record<Movement['type'], string> = {
 
 export function ItemDetailPage() {
   const { id = '' } = useParams();
+  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState(false);
+  const [reversing, setReversing] = useState<Movement | null>(null);
 
+  const canWrite = user?.role !== 'viewer';
   const item = useItem(id);
   const stock = useItemStock(id);
   const history = useItemHistory(id, page);
@@ -148,11 +160,18 @@ export function ItemDetailPage() {
       </div>
 
       <section className="space-y-3">
-        <div>
-          <h2 className="font-medium">Movement history</h2>
-          <p className="text-sm text-muted-foreground">
-            Newest first, with the balance at that location after each movement.
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-medium">Movement history</h2>
+            <p className="text-sm text-muted-foreground">
+              Newest first, with the balance at that location after each movement.
+            </p>
+          </div>
+          {canWrite && (
+            <Button asChild variant="outline" size="sm">
+              <Link to="/movements">Move stock</Link>
+            </Button>
+          )}
         </div>
 
         <div className="rounded-lg border border-border bg-card">
@@ -165,13 +184,16 @@ export function ItemDetailPage() {
                 <TableHead className="text-right">Qty</TableHead>
                 <TableHead className="text-right">Balance</TableHead>
                 <TableHead>Who</TableHead>
+                <TableHead className="text-right">
+                  <span className="sr-only">Correct</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {history.isLoading &&
                 Array.from({ length: 6 }).map((_, i) => (
                   <TableRow key={i} className="hover:bg-transparent">
-                    {Array.from({ length: 6 }).map((__, j) => (
+                    {Array.from({ length: 7 }).map((__, j) => (
                       <TableCell key={j}>
                         <Skeleton className="h-4 w-full max-w-[100px]" />
                       </TableCell>
@@ -181,16 +203,26 @@ export function ItemDetailPage() {
 
               {!history.isLoading &&
                 history.data?.data.map((movement) => (
-                  <MovementRow key={movement.id} movement={movement} />
+                  <MovementRow
+                    key={movement.id}
+                    movement={movement}
+                    canWrite={canWrite}
+                    onReverse={setReversing}
+                  />
                 ))}
 
               {!history.isLoading && history.data?.data.length === 0 && (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="py-12 text-center">
+                  <TableCell colSpan={7} className="py-12 text-center">
                     <p className="font-medium">No movements yet</p>
                     <p className="mt-1 text-sm text-muted-foreground">
                       Stock appears here once it is received.
                     </p>
+                    {canWrite && (
+                      <Button asChild variant="outline" size="sm" className="mt-4">
+                        <Link to="/movements">Receive stock</Link>
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               )}
@@ -232,6 +264,11 @@ export function ItemDetailPage() {
       </section>
 
       <ItemDialog open={editing} onOpenChange={setEditing} item={item.data} />
+      <ReverseDialog
+        movement={reversing}
+        open={reversing !== null}
+        onOpenChange={(open) => !open && setReversing(null)}
+      />
     </div>
   );
 }
@@ -246,24 +283,21 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * Rendered in UTC, deliberately.
+ * One line of history, with the way to undo it sitting on it.
  *
- * The demand series groups movements into UTC days, so rendering the history in
- * local time makes the two disagree: a movement counted in Thursday's demand
- * bucket displays as Wednesday for anyone west of Greenwich, and reconciling the
- * sparkline against this table becomes impossible. One definition of "what day
- * did this happen", used everywhere.
+ * Reverse lives here rather than on the movements screen because this is where
+ * somebody notices the mistake: they are looking at the balance, they see the
+ * row that made it wrong, and the correction is on that row.
  */
-export function formatMovementDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
-    timeZone: 'UTC',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
-function MovementRow({ movement }: { movement: MovementWithBalance }) {
+function MovementRow({
+  movement,
+  canWrite,
+  onReverse,
+}: {
+  movement: MovementWithBalance;
+  canWrite: boolean;
+  onReverse: (movement: MovementWithBalance) => void;
+}) {
   const isInbound = movement.quantity > 0;
   return (
     <TableRow>
@@ -278,6 +312,13 @@ function MovementRow({ movement }: { movement: MovementWithBalance }) {
             <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />
           )}
           {MOVEMENT_LABEL[movement.type]}
+          {/* This row is itself a correction. Saying so is the difference
+              between a puzzling double entry and an obvious one. */}
+          {movement.reversesId && (
+            <Badge variant="outline" className="text-[10px]">
+              reversal
+            </Badge>
+          )}
         </span>
         {movement.reference && (
           <span className="text-xs text-muted-foreground tabular">{movement.reference}</span>
@@ -293,6 +334,28 @@ function MovementRow({ movement }: { movement: MovementWithBalance }) {
         {movement.balanceAfter.toLocaleString()}
       </TableCell>
       <TableCell className="text-muted-foreground">{movement.actorName}</TableCell>
+      <TableCell className="text-right">
+        {canWrite &&
+          (isReversible(movement.type) ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onReverse(movement)}
+              aria-label={`Reverse this ${MOVEMENT_LABEL[movement.type].toLowerCase()} movement`}
+            >
+              <Undo2 /> Reverse
+            </Button>
+          ) : (
+            /*
+             * A transfer is a pair. The title carries the reason, because a
+             * button that is simply absent reads as an oversight — and the next
+             * person tries to reverse one leg through the API instead.
+             */
+            <span title={TRANSFER_REVERSAL_MESSAGE} className="pr-3 text-xs text-muted-foreground">
+              paired
+            </span>
+          ))}
+      </TableCell>
     </TableRow>
   );
 }

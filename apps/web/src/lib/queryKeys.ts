@@ -10,8 +10,25 @@
 export const queryKeys = {
   session: ['session'] as const,
   items: {
+    /**
+     * Prefix for everything hanging off an item, stock and history included.
+     * Posting a movement invalidates this one key and every item view that could
+     * have moved refetches, rather than each screen remembering to.
+     */
     all: ['items'] as const,
     list: (query: Record<string, unknown>) => ['items', 'list', query] as const,
     detail: (id: string) => ['items', 'detail', id] as const,
+    stock: (id: string) => ['items', 'stock', id] as const,
+    history: (id: string, page: number, pageSize: number) =>
+      ['items', 'history', id, page, pageSize] as const,
+    demand: (id: string) => ['items', 'demand', id] as const,
+  },
+  locations: {
+    all: ['locations'] as const,
+    list: (query: Record<string, unknown>) => ['locations', 'list', query] as const,
+  },
+  movements: {
+    all: ['movements'] as const,
+    list: (query: Record<string, unknown>) => ['movements', 'list', query] as const,
   },
 } as const;
