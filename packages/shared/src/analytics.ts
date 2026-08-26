@@ -115,3 +115,10 @@ export const actionListResponseSchema = z.object({
   items: z.array(reorderSuggestionSchema),
 });
 export type ActionListResponse = z.infer<typeof actionListResponseSchema>;
+
+/** What GET /analytics/demand/:itemId returns: the series and what it implies. */
+export const itemDemandResponseSchema = z.object({
+  stats: demandStatsSchema,
+  suggestion: reorderSuggestionSchema,
+});
+export type ItemDemandResponse = z.infer<typeof itemDemandResponseSchema>;

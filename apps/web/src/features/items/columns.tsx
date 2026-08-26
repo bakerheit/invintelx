@@ -1,4 +1,5 @@
 import type { ColumnDef } from '@tanstack/react-table';
+import { Link } from 'react-router';
 import { MoreHorizontal } from 'lucide-react';
 import { formatCents, type Item } from '@invintelx/shared';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +26,14 @@ export function buildItemColumns({
     {
       id: 'sku',
       header: 'SKU',
-      cell: ({ row }) => <span className="font-medium tabular">{row.original.sku}</span>,
+      cell: ({ row }) => (
+        <Link
+          to={`/items/${row.original.id}`}
+          className="font-medium tabular text-primary hover:underline"
+        >
+          {row.original.sku}
+        </Link>
+      ),
     },
     {
       id: 'name',
@@ -84,6 +92,9 @@ export function buildItemColumns({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <Link to={`/items/${item.id}`}>View details</Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => onEdit(item)}>Edit</DropdownMenuItem>
                 {item.status === 'active' ? (
                   <DropdownMenuItem destructive onSelect={() => onArchive(item)}>

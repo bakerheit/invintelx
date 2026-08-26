@@ -139,7 +139,7 @@ function ActionRow({
 
         <Button asChild variant="outline" size="sm">
           {/* Until purchase orders exist, the action is to go look at the item. */}
-          <Link to={`/items?q=${encodeURIComponent(suggestion.sku)}`}>Open</Link>
+          <Link to={`/items/${suggestion.itemId}`}>Open</Link>
         </Button>
       </div>
 
