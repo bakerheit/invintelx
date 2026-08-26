@@ -7,10 +7,16 @@ The hosted instance is [invintelx.org](https://invintelx.org).
 
 **You may run your own.** The AGPL grants you that right and this project has no
 interest in obstructing it. What we do not yet offer is a *supported* self-host
-story — there are no versioned releases, no upgrade path and no promise that a
-deployment question gets answered. Running it is allowed and documented;
+story — there is no published image, no proven upgrade path and no promise that
+a deployment question gets answered. Running it is allowed and documented;
 operating it is currently your problem. If that changes it will be because
 people actually did it.
+
+Releases are semver tags cut from `main`, and every one of them says what breaks
+and what it will do to your database on first boot: see
+[CHANGELOG.md](CHANGELOG.md), and [docs/releasing.md](docs/releasing.md) for what
+a version number means here. A running instance reports its own version at
+`/api/health`, so a bug report can say which release it is against.
 
 > **Status: early.** The first vertical slice works end to end — accounts, sign
 > in, and full CRUD over items. The stock ledger and the analytics that give the
@@ -171,8 +177,9 @@ asks it to. If you would rather it did not, build only the API with
 only.
 
 None of this is a supported deployment yet — see the status note at the top.
-There is no image, no release tag and no upgrade path. It is how you run it
-today, honestly described.
+Releases are tagged and there is a changelog to read before you move, but there
+is no published image and no upgrade that has been proven across a version
+boundary. It is how you run it today, honestly described.
 
 ## Checks
 

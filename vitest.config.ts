@@ -8,7 +8,13 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['packages/*/src/**/*.test.{ts,tsx}', 'apps/*/src/**/*.test.{ts,tsx}'],
+    include: [
+      'packages/*/src/**/*.test.{ts,tsx}',
+      'apps/*/src/**/*.test.{ts,tsx}',
+      // Release tooling. It decides whether a tag gets published, so the rules
+      // it enforces are tested here rather than discovered by a bad release.
+      'scripts/**/*.test.mjs',
+    ],
     exclude: ['**/node_modules/**', '**/dist/**'],
     /*
      * Node by default; only the web app needs a DOM. Scoping it this way keeps

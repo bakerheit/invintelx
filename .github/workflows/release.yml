@@ -1,0 +1,155 @@
+name: Release
+
+# Cutting a release is pushing a tag. Everything after that is this file.
+# See docs/releasing.md.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create the GitHub release
+  packages: write # push the image to GHCR
+
+# Never cancel a release half-way through. A superseded CI run is fine; a
+# superseded publish leaves a tag with an image and no release, or worse.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      is-prerelease: ${{ steps.check.outputs.is-prerelease }}
+      image-tags: ${{ steps.check.outputs.image-tags }}
+      notes-file: ${{ steps.check.outputs.notes-file }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: `merge-base --is-ancestor` on a shallow clone answers
+          # "no" for a commit whose ancestry was truncated, which would reject
+          # a perfectly good tag.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Tags are cut from main and nowhere else. Without this a tag pushed onto
+      # a branch that was never reviewed publishes an image called :latest.
+      - name: Tag must be on main
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error title=Tag is not on main::$GITHUB_REF_NAME points at a commit that is not an ancestor of origin/main. Releases are cut from main - see docs/releasing.md."
+            exit 1
+          fi
+
+      # No `pnpm install` first: this has no dependencies precisely so that a
+      # tag can be rejected before anything is built or published.
+      - name: Version, changelog and release notes
+        id: check
+        run: node scripts/release/check-release.mjs "$GITHUB_REF_NAME"
+
+      - name: Keep the notes that were actually checked
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: ${{ steps.check.outputs.notes-file }}
+          if-no-files-found: error
+
+  # The same four checks CI runs, by calling CI. A tag that does not build is
+  # not a release.
+  verify:
+    name: Verify
+    needs: check
+    uses: ./.github/workflows/ci.yml
+
+  image:
+    name: Publish the image
+    needs: [check, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # There is no Dockerfile in this repository yet. Failing every release
+      # until there is would block tagging entirely, and quietly publishing
+      # nothing would let a release claim an image it does not have - so say it
+      # out loud in the run summary and carry on.
+      - name: Is there an image to build?
+        id: dockerfile
+        run: |
+          if [ -f Dockerfile ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=No image published::${{ needs.check.outputs.version }} was released without a container image: there is no Dockerfile in the repository yet."
+            {
+              echo "### No container image for ${{ needs.check.outputs.version }}"
+              echo
+              echo "There is no \`Dockerfile\` in this repository yet, so nothing was pushed to \`ghcr.io/${{ github.repository }}\`."
+              echo "The release itself is real - it is a tag, a changelog entry and a GitHub release you can build from source."
+              echo
+              echo "This job starts publishing on its own once a \`Dockerfile\` exists. See \`docs/releasing.md\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Set up Buildx
+        if: steps.dockerfile.outputs.present == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.dockerfile.outputs.present == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        if: steps.dockerfile.outputs.present == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ needs.check.outputs.image-tags }}
+          labels: |
+            org.opencontainers.image.title=InvIntelX
+            org.opencontainers.image.version=${{ needs.check.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  publish:
+    name: Publish the release
+    needs: [check, verify, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the checked notes
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: notes
+
+      # The release notes are the changelog section verbatim. If they read
+      # badly, the changelog reads badly, and that is the thing worth fixing.
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRERELEASE: ${{ needs.check.outputs.is-prerelease }}
+        run: |
+          set --
+          if [ "$PRERELEASE" = "true" ]; then set -- --prerelease; fi
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes/release-notes.md \
+            "$@"

@@ -17,6 +17,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
+    "release:check": "node scripts/release/check-release.mjs",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:seed": "pnpm --filter @invintelx/api seed",
