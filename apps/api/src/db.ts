@@ -43,6 +43,37 @@ export interface SetupTokenDoc {
 
 export const SETUP_TOKEN_ID = 'setup';
 
+/** One migration that has run, kept forever so the history is readable. */
+export interface AppliedMigrationDoc {
+  version: number;
+  name: string;
+  appliedAt: Date;
+  durationMs: number;
+}
+
+/**
+ * What shape this database is in, and how it got there.
+ *
+ * Exactly one of these ever exists, hence the fixed `_id`: the whole point is
+ * that two processes booting at once contend for the same document rather than
+ * each deciding for themselves what has run.
+ */
+export interface SchemaVersionDoc {
+  _id: typeof SCHEMA_VERSION_ID;
+  /** Highest migration version applied. 0 means "nothing has run yet". */
+  version: number;
+  applied: AppliedMigrationDoc[];
+  updatedAt: Date;
+  /**
+   * Held for the duration of a migration run. Null when nobody is migrating.
+   * `heartbeatAt` is refreshed while the holder is alive, so a lock left behind
+   * by a killed process can be told apart from one that is still working.
+   */
+  lock: { holder: string; acquiredAt: Date; heartbeatAt: Date } | null;
+}
+
+export const SCHEMA_VERSION_ID = 'schema';
+
 export interface ItemDoc {
   _id: ObjectId;
   sku: string;
@@ -153,6 +184,8 @@ export const locations = (): Collection<LocationDoc> => getDb().collection<Locat
 export const movements = (): Collection<MovementDoc> => getDb().collection<MovementDoc>('movements');
 export const stockLevels = (): Collection<StockLevelDoc> =>
   getDb().collection<StockLevelDoc>('stockLevels');
+export const schemaVersion = (): Collection<SchemaVersionDoc> =>
+  getDb().collection<SchemaVersionDoc>('schemaVersion');
 
 /**
  * Idempotent. Run at boot so a fresh database is correct without a migration
