@@ -3,10 +3,11 @@ import { ObjectId } from 'mongodb';
 import { loginInputSchema, registerInputSchema } from '@invintelx/shared';
 import { sessions, users } from '../db.js';
 import { isTest } from '../env.js';
-import { ConflictError, UnauthorizedError } from '../errors.js';
+import { ConflictError, ForbiddenError, UnauthorizedError } from '../errors.js';
 import { asyncHandler, parseOrThrow } from '../lib/http.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
 import { createRateLimiter } from '../lib/rateLimit.js';
+import { consumeSetupToken, getSetupStatus } from '../lib/setup.js';
 import {
   SESSION_COOKIE,
   SESSION_TTL_MS,
@@ -42,6 +43,18 @@ async function startSession(userId: ObjectId) {
   return { token, expiresAt };
 }
 
+/**
+ * Deliberately unauthenticated: the registration form has to ask this before
+ * anyone has an account, and it is the only way that form can say something
+ * true about the account it is about to create.
+ */
+authRouter.get(
+  '/setup',
+  asyncHandler(async (_req, res) => {
+    res.json(await getSetupStatus());
+  }),
+);
+
 authRouter.post(
   '/register',
   asyncHandler(async (req, res) => {
@@ -58,6 +71,24 @@ authRouter.post(
     // Whoever sets up the instance should not have to hand-edit the database to
     // get an admin. Everyone after them starts as a member.
     const isFirstUser = (await users().countDocuments({}, { limit: 1 })) === 0;
+
+    /*
+     * ...but not merely by being first through the door. Deploying an instance
+     * and claiming it are two acts, and the setup token is what separates them:
+     * without it an exposed instance belongs to whichever stranger reaches it
+     * during the minutes between the container coming up and the operator
+     * getting round to registering.
+     *
+     * Spent here, before the insert, so a token that has already made an
+     * administrator cannot make a second one.
+     */
+    if (isFirstUser && !(await consumeSetupToken(input.setupToken))) {
+      throw new ForbiddenError(
+        'This instance has no administrator yet. Creating one needs the setup token printed in the server log when the API started.',
+        { setupToken: 'Missing or incorrect setup token' },
+      );
+    }
+
     const now = new Date();
 
     const doc = {

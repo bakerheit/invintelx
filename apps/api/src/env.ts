@@ -31,6 +31,28 @@ const envSchema = z.object({
    * and the case where a reverse proxy serves the assets instead.
    */
   WEB_DIST: z.string().min(1).optional(),
+
+  /**
+   * How an instance gets its first administrator.
+   *
+   * 'token' (the default): registration is refused until it presents the setup
+   * token minted at boot and printed to the server log. Deploying an instance
+   * and becoming its administrator are then two separate acts, so whoever
+   * reaches an exposed instance first cannot take it over.
+   *
+   * 'open': the first account to register becomes the administrator with no
+   * token at all. That is a deliberate choice for a public sign-up product like
+   * invintelx.org; on anything else it is a takeover window that opens the
+   * moment the container is reachable.
+   */
+  FIRST_ADMIN_SETUP: z.enum(['token', 'open']).default('token'),
+
+  /**
+   * Pins the setup token instead of letting one be minted at boot, for deploys
+   * where reading the container log is awkward and a secret is easier to inject.
+   * Ignored entirely once the instance has an account.
+   */
+  SETUP_TOKEN: z.string().min(16, 'SETUP_TOKEN must be at least 16 characters').optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

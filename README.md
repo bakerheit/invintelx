@@ -83,8 +83,30 @@ pnpm dev
 The web app is on <http://localhost:5173> and proxies `/api` to the API on port
 3001, so everything is same-origin in development and session cookies just work.
 
-Sign in with `demo@invintelx.org` / `invintelx-demo-password`, or register a new
-account — **the first account created on an instance becomes the admin.**
+Sign in with `demo@invintelx.org` / `invintelx-demo-password`.
+
+### Claiming a fresh instance
+
+An instance with no accounts is not owned by whoever registers first. While it
+has none, the API mints a **setup token** at every boot and prints it:
+
+```
+[invintelx-api] ──────────────────────────────────────────────
+[invintelx-api] This instance has no accounts yet. To become its administrator,
+[invintelx-api] register and give this setup token:
+[invintelx-api]     3Qk8n-example-token-not-a-real-one
+```
+
+Register with that token and the account you create is the administrator.
+Everyone after them is a member and needs no token. The token is shown once per
+boot, replaced by the next boot, and dead as soon as it has made an
+administrator — so restart the API if you lose it.
+
+Two knobs, both documented in `.env.example`: `SETUP_TOKEN` pins the token
+instead of minting one, for deploys where injecting a secret beats reading a
+log; `FIRST_ADMIN_SETUP=open` turns the gate off entirely and hands the instance
+to the first registration, which is what a public sign-up product like
+invintelx.org wants and nothing else should.
 
 ## Running it outside a dev checkout
 

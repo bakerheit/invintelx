@@ -59,6 +59,9 @@ beforeAll(async () => {
   process.env.MONGODB_URI = replSet.getUri();
   process.env.MONGODB_DB = 'invintelx_ledger_test';
   process.env.SESSION_SECRET = 'test-secret-that-is-definitely-long-enough';
+  // The ledger tests register their way to an admin; claiming an instance is
+  // auth.setup.test.ts's subject, not theirs.
+  process.env.FIRST_ADMIN_SETUP = 'open';
 
   db = await import('../db.js');
   await db.connect();
