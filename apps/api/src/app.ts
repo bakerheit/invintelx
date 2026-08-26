@@ -10,6 +10,7 @@ import { locationsRouter } from './routes/locations.js';
 import { movementsRouter } from './routes/movements.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { webAssets } from './web.js';
+import { VERSION } from './version.js';
 
 export function createApp(): Express {
   const app = express();
@@ -76,6 +77,10 @@ export function createApp(): Express {
     void healthcheck().then((database) => {
       res.status(database ? 200 : 503).json({
         status: database ? 'ok' : 'degraded',
+        // Unauthenticated on purpose: "which version is this" is the first
+        // question of every deployment bug report, and an operator who cannot
+        // sign in still has to be able to answer it.
+        version: VERSION,
         database,
         uptimeSeconds: Math.round(process.uptime()),
       });

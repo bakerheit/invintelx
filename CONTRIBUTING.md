@@ -31,6 +31,23 @@ API tests run against a real `mongod`, not a mock. If a behaviour depends on a
 database guarantee — a unique index, a TTL, a transaction — write a test that
 would fail without it.
 
+## The changelog
+
+If your change is visible to somebody running their own instance — an
+environment variable, a data shape, an API response, a default, a fix they were
+waiting for — add a line to the `## [Unreleased]` section of
+[CHANGELOG.md](CHANGELOG.md) in the same pull request. It is a sentence written
+for the person deciding whether to upgrade, not a copy of your commit subject.
+
+If it **breaks** something or **migrates** something, it goes under those
+headings specifically. A release cannot be cut until those two questions are
+answered, so a missing line becomes somebody else's archaeology later.
+
+Purely internal changes — a refactor, a test, a build tweak — need no entry.
+
+[docs/releasing.md](docs/releasing.md) has the rest: what a version number means
+here, and how a release is cut.
+
 ## Commits and branches
 
 Branch off `main`. Keep the subject line in the imperative mood and explain the
@@ -55,6 +72,6 @@ That is often true even for work done on your own time.
 
 InvIntelX is developed against the hosted instance at invintelx.org, and that is
 what gets exercised daily. Self-hosting is permitted and we will take patches
-that make it easier — but it is not yet *supported*: there are no releases, no
-upgrade path, and deployment questions may go unanswered. Say which one you are
-working on when you open an issue, so expectations match.
+that make it easier — but it is not yet *supported*: there is no published
+image, no proven upgrade path, and deployment questions may go unanswered. Say
+which one you are working on when you open an issue, so expectations match.

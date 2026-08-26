@@ -103,6 +103,16 @@ describe('what the fallback must not swallow', () => {
     expect(response.headers['content-type']).toMatch(/application\/json/);
     expect(response.body).toHaveProperty('uptimeSeconds');
   });
+
+  it('reports the running version there, unauthenticated', async () => {
+    // The first question of every deployment bug report, and the operator
+    // asking it may not have an account. Reported whether the database is up
+    // or not, because a degraded instance is the one being reported.
+    const { VERSION } = await import('./version.js');
+    const response = await request(app).get('/api/health');
+    expect(response.body.version).toBe(VERSION);
+    expect(response.body.version).toMatch(/^\d+\.\d+\.\d+/);
+  });
 });
 
 describe('finding the build without being told where it is', () => {

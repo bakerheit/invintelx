@@ -1,0 +1,68 @@
+# Changelog
+
+What changed in each release of InvIntelX, written for the person deciding
+whether to upgrade — not assembled from commit subjects.
+
+Every released section leads with the two things that decide an upgrade:
+
+- **Breaking** — what stops working, and what to change before you upgrade.
+- **Migrations** — what the release does to your database on first boot,
+  because that is the part you cannot undo by pulling the old tag back.
+
+Both are always present, even when the answer is `_None._`. Silence in a
+changelog reads as "nothing breaks", and it should only read that way when
+somebody actually checked.
+
+Versions are [semver](https://semver.org). What counts as a breaking change for
+a self-hosted instance is spelled out in [docs/releasing.md](docs/releasing.md).
+
+Changes land here under `## [Unreleased]` as they are merged; cutting a release
+renames that heading to the version and the date.
+
+## [Unreleased]
+
+### Breaking
+
+_None._ This is the first release, so there is nothing to upgrade from.
+
+### Migrations
+
+_None._ The API creates its indexes at boot, which is idempotent and safe to
+repeat. There is no schema migration mechanism yet, so an instance started on
+this release is on the only shape the data has ever had.
+
+### Added
+
+- Accounts and session sign-in. Sessions are opaque tokens stored as a SHA-256
+  hash, so a dump of the sessions collection hands nobody a live session.
+- Items: model, REST API, list screen with URL-backed filtering, sorting and
+  paging, and a detail page showing an item's movement history.
+- Locations with a warehouse/bin hierarchy.
+- An append-only `StockMovement` ledger with on-hand quantity as a projection
+  derived from it. Receive, issue, transfer, adjust and reversal, with a screen
+  to move stock.
+- Analytics over the ledger: demand series, days of cover, reorder suggestions
+  and an action list of the items that need attention today.
+- A deliberate act between deploying an instance and it having an
+  administrator. While an instance has no accounts the API mints a **setup
+  token** at each boot and prints it; registration will not create an
+  administrator without it. `SETUP_TOKEN` pins the token instead of minting
+  one, and `FIRST_ADMIN_SETUP=open` turns the gate off for a public sign-up
+  deployment. See the README.
+- The API serves the built web app itself, so a production instance is one
+  process on one origin. `WEB_DIST` overrides where it looks; pointing it at a
+  directory with no `index.html` is a boot failure rather than a warning.
+- `/api/health` reports the running version, so a bug report can say which
+  release it is against.
+- Licensed AGPL-3.0-or-later, with the section 13 source offer the licence
+  requires wired into the running app via `VITE_SOURCE_URL`. Point it at your
+  own source if you modify InvIntelX and serve it to other people.
+
+### Known limitations
+
+- No published container image and no `docker compose up` that runs the app —
+  `docker-compose.yml` starts MongoDB for development and nothing else.
+- No upgrade has been exercised across a version boundary, because there is no
+  earlier version to exercise it from. Whether skipping versions will be
+  allowed is not decided yet.
+- Self-hosting is permitted and documented but not *supported*. See the README.
