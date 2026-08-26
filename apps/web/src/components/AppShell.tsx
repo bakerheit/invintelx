@@ -5,6 +5,7 @@ import { useAuth } from '@/features/auth/AuthProvider';
 import { useTheme } from './ThemeProvider';
 import { APP_ICON, NAV_ITEMS } from './nav';
 import { CommandPalette } from './CommandPalette';
+import { SourceNotice } from './SourceNotice';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -101,10 +102,12 @@ export function AppShell() {
           )}
         </nav>
 
-        <div className="border-t border-border p-3">
+        <div className="space-y-1 border-t border-border p-3">
           <p className="px-3 text-xs text-muted-foreground">
             Open source inventory intelligence
           </p>
+          {/* AGPL s13: users interacting over a network are entitled to the source. */}
+          <SourceNotice className="px-3 text-xs text-muted-foreground" />
         </div>
       </aside>
 

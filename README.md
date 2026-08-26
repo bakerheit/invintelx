@@ -3,10 +3,14 @@
 Open source inventory intelligence. Track SKUs, stock and movements, and get told
 which items actually need attention today.
 
-The hosted instance is [invintelx.org](https://invintelx.org). This repository is
-public so the code can be read, audited and contributed to — it is not packaged
-for you to run your own production deployment, and issues about self-hosted
-setups are out of scope.
+The hosted instance is [invintelx.org](https://invintelx.org).
+
+**You may run your own.** The AGPL grants you that right and this project has no
+interest in obstructing it. What we do not yet offer is a *supported* self-host
+story — there are no versioned releases, no upgrade path and no promise that a
+deployment question gets answered. Running it is allowed and documented;
+operating it is currently your problem. If that changes it will be because
+people actually did it.
 
 > **Status: early.** The first vertical slice works end to end — accounts, sign
 > in, and full CRUD over items. The stock ledger and the analytics that give the
@@ -131,6 +135,26 @@ anyone a set of live sessions.
 
 ## Licence
 
-Not yet chosen. Until a `LICENSE` file lands, no open source grant is offered —
-that decision is tracked as INVX-36 and will be made before the repository goes
-public.
+[GNU Affero General Public Licence v3.0](LICENSE). Copyright (C) 2026 Andrew Baker.
+
+AGPL rather than a permissive licence for one specific reason: §13 is the only
+clause that reaches software offered as a service. It means nobody can take this
+code, run a closed hosted fork of exactly what invintelx.org is, and give
+nothing back.
+
+**It does not restrict self-hosting.** Running InvIntelX on your own
+infrastructure — modified or not — for your own use triggers no obligation
+whatsoever. §13 applies only if you modify it *and* offer the modified version
+over a network to other people, in which case those people are entitled to your
+source. Internal use is unencumbered.
+
+If the AGPL is genuinely incompatible with your situation, ask — a commercial
+licence is possible precisely because contributions are taken under a CLA.
+
+## Contributing
+
+Contributions are welcome and require signing the
+[Contributor Licence Agreement](CLA.md). You keep the copyright in your work;
+the agreement grants the project the right to relicense, which is what makes a
+commercial exception possible without hunting down every past contributor. See
+[CONTRIBUTING.md](CONTRIBUTING.md).

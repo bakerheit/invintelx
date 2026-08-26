@@ -1,4 +1,5 @@
 import { Boxes } from 'lucide-react';
+import { SourceNotice } from '@/components/SourceNotice';
 
 export function AuthLayout({
   title,
@@ -24,6 +25,8 @@ export function AuthLayout({
           </div>
           {children}
         </div>
+
+        <SourceNotice className="mt-6 text-center text-xs text-muted-foreground" />
       </div>
     </div>
   );

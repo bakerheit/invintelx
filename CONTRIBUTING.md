@@ -37,8 +37,24 @@ Branch off `main`. Keep the subject line in the imperative mood and explain the
 *why* in the body when the change is not obvious. Reference the ticket id
 (`INVX-nn`) when there is one.
 
+## The CLA
+
+Before your first pull request is merged you need to sign the
+[Contributor Licence Agreement](CLA.md) — one line added to `CONTRIBUTORS.md`,
+once, covering everything you ever contribute.
+
+You keep the copyright in your work. The agreement grants the project the right
+to relicense your contribution, which is what allows a commercial exception to
+be sold to an organisation that cannot accept the AGPL. Without it every
+contribution is AGPL-only forever and that option closes permanently.
+
+If your employer has rights in work you produce, get their permission first.
+That is often true even for work done on your own time.
+
 ## Scope
 
-InvIntelX is developed for the hosted instance at invintelx.org. Contributions
-that add supported self-hosting, packaging, or deployment targets are out of
-scope; contributions to the application itself are very welcome.
+InvIntelX is developed against the hosted instance at invintelx.org, and that is
+what gets exercised daily. Self-hosting is permitted and we will take patches
+that make it easier — but it is not yet *supported*: there are no releases, no
+upgrade path, and deployment questions may go unanswered. Say which one you are
+working on when you open an issue, so expectations match.
