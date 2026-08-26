@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { Download, Plus, Search, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Item } from '@invintelx/shared';
 import { useTableParams } from '@/hooks/useTableParams';
@@ -17,13 +17,15 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useArchiveItem, useItems, useRestoreItem } from './api';
+import { itemsExportHref, useArchiveItem, useItems, useRestoreItem } from './api';
 import { buildItemColumns } from './columns';
 import { ItemDialog } from './ItemDialog';
+import { ImportDialog } from './ImportDialog';
 
 export function ItemsPage() {
   const { params, update, toggleSort } = useTableParams();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<Item | undefined>(undefined);
   const [pendingArchive, setPendingArchive] = useState<Item | null>(null);
 
@@ -68,14 +70,29 @@ export function ItemsPage() {
             Every SKU you track. Stock levels arrive with the movement ledger.
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setEditing(undefined);
-            setDialogOpen(true);
-          }}
-        >
-          <Plus /> New item
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/*
+            A plain link, not a fetch: the browser saves what the server marked
+            as an attachment, and the href carries the filters currently on
+            screen so "export" means the rows being looked at.
+          */}
+          <Button asChild variant="outline">
+            <a href={itemsExportHref(params)} download>
+              <Download /> Export CSV
+            </a>
+          </Button>
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload /> Import CSV
+          </Button>
+          <Button
+            onClick={() => {
+              setEditing(undefined);
+              setDialogOpen(true);
+            }}
+          >
+            <Plus /> New item
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -135,6 +152,8 @@ export function ItemsPage() {
           ) : undefined
         }
       />
+
+      <ImportDialog open={importOpen} onOpenChange={setImportOpen} />
 
       <ItemDialog
         open={dialogOpen}

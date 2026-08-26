@@ -20,6 +20,15 @@ export function createApp(): Express {
   if (isProduction) app.set('trust proxy', 1);
   app.disable('x-powered-by');
 
+  /*
+   * A CSV import carries the whole file in its body, which is the one request
+   * in this product that is legitimately large - four thousand SKUs is a few
+   * hundred kilobytes before anyone has written a long description. Mounted
+   * ahead of the general parser because body-parser skips a body that has
+   * already been read, so the first parser to match a path is the one whose
+   * limit applies. Everything else stays on the tight limit.
+   */
+  app.use('/api/items/import', express.json({ limit: '16mb' }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 

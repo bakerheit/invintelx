@@ -35,6 +35,14 @@ export function errorHandler(
   });
 }
 
+function isPayloadTooLarge(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { type?: unknown }).type === 'entity.too.large'
+  );
+}
+
 function normalize(err: unknown): {
   status: number;
   code: string;
@@ -43,6 +51,19 @@ function normalize(err: unknown): {
 } {
   if (err instanceof AppError) {
     return { status: err.status, code: err.code, message: err.message, ...(err.fields ? { fields: err.fields } : {}) };
+  }
+
+  /*
+   * body-parser's own error for a body over the limit. Left as a 500 it reads
+   * as "the server broke", when in fact the server understood perfectly and the
+   * file is simply too big - which is a thing the person uploading it can act on.
+   */
+  if (isPayloadTooLarge(err)) {
+    return {
+      status: 413,
+      code: 'payload_too_large',
+      message: 'That upload is too large for this endpoint',
+    };
   }
 
   // A duplicate key means two requests raced past the application-level check.

@@ -2,16 +2,26 @@ import { Router } from 'express';
 import { ObjectId, type Filter } from 'mongodb';
 import {
   createItemInputSchema,
+  CsvParseError,
+  itemImportRequestSchema,
   itemListResponseSchema,
+  itemsToCsv,
+  ItemImportError,
   listItemsQuerySchema,
   objectIdSchema,
+  planItemImport,
+  readItemCsv,
+  summarizeImport,
   updateItemInputSchema,
+  type ItemImportPlan,
+  type ListItemsQuery,
 } from '@invintelx/shared';
 import { items, type ItemDoc } from '../db.js';
-import { NotFoundError } from '../errors.js';
+import { BadRequestError, NotFoundError } from '../errors.js';
 import { asyncHandler, parseOrThrow } from '../lib/http.js';
 import { requireRole } from '../middleware/auth.js';
 import { toItem } from '../serializers.js';
+import { applyItemImport, loadExistingBySku, MAX_IMPORT_ROWS } from '../services/itemImport.js';
 
 export const itemsRouter: Router = Router();
 
@@ -31,19 +41,27 @@ function parseId(raw: unknown): ObjectId {
   return new ObjectId(parsed.data);
 }
 
+/**
+ * The list screen's filters, as a Mongo filter. Shared with the export so that
+ * "export" means "the rows I am looking at" rather than something subtly else.
+ */
+function buildFilter(query: Pick<ListItemsQuery, 'q' | 'category' | 'status'>): Filter<ItemDoc> {
+  const filter: Filter<ItemDoc> = {};
+  // Default to hiding archived items; asking for them is explicit.
+  filter.status = query.status ?? 'active';
+  if (query.category) filter.category = query.category;
+  if (query.q) {
+    const rx = new RegExp(escapeRegex(query.q), 'i');
+    filter.$or = [{ sku: rx }, { name: rx }, { barcode: rx }];
+  }
+  return filter;
+}
+
 itemsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     const query = parseOrThrow(listItemsQuerySchema, req.query);
-
-    const filter: Filter<ItemDoc> = {};
-    // Default to hiding archived items; asking for them is explicit.
-    filter.status = query.status ?? 'active';
-    if (query.category) filter.category = query.category;
-    if (query.q) {
-      const rx = new RegExp(escapeRegex(query.q), 'i');
-      filter.$or = [{ sku: rx }, { name: rx }, { barcode: rx }];
-    }
+    const filter = buildFilter(query);
 
     const skip = (query.page - 1) * query.pageSize;
     const [docs, total] = await Promise.all([
@@ -68,6 +86,117 @@ itemsRouter.get(
     // Validating our own response catches contract drift here rather than as a
     // confusing parse failure in the browser.
     res.json(itemListResponseSchema.parse(body));
+  }),
+);
+
+/** Refused rather than truncated: a short export that looks complete is a trap. */
+const MAX_EXPORT_ITEMS = 50_000;
+
+/** Built from its code point rather than written literally: the character is invisible. */
+const BOM = String.fromCharCode(0xfeff);
+
+/**
+ * The current filter as a file.
+ *
+ * Registered before `/:id`, which would otherwise match `export.csv` and answer
+ * a 404 about an item id nobody asked for.
+ */
+itemsRouter.get(
+  '/export.csv',
+  asyncHandler(async (req, res) => {
+    const query = parseOrThrow(listItemsQuerySchema, req.query);
+    const filter = buildFilter(query);
+
+    const total = await items().countDocuments(filter);
+    if (total > MAX_EXPORT_ITEMS) {
+      throw new BadRequestError(
+        `That is ${total.toLocaleString('en-US')} items. Narrow the filter to ` +
+          `${MAX_EXPORT_ITEMS.toLocaleString('en-US')} or fewer and export in parts.`,
+      );
+    }
+
+    // By SKU, always: an export is a file people diff against the last one.
+    const docs = await items().find(filter).sort({ sku: 1 }).toArray();
+    const csv = itemsToCsv(docs.map(toItem));
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="items-${stamp}.csv"`);
+    /*
+     * A byte order mark. Without it Excel reads the file as the local codepage
+     * and every accented character in a product name arrives mangled - and this
+     * is a file people open in Excel. `parseCsv` strips it again on the way
+     * back in, so the round trip is unaffected.
+     */
+    res.send(BOM + csv);
+  }),
+);
+
+/**
+ * Turn the request into a plan, or into the right refusal.
+ *
+ * A file that is not CSV takes the whole upload down with it, because there is
+ * no such thing as importing part of a file the parser could not read. A row
+ * whose *contents* are wrong is a row-level issue and rides back in the preview
+ * with its line number, which is what the user needs to go and fix it.
+ */
+async function planFromRequest(body: unknown): Promise<ItemImportPlan> {
+  const input = parseOrThrow(itemImportRequestSchema, body);
+
+  try {
+    const reading = readItemCsv(input.csv, input.mapping);
+    if (reading.rows.length > MAX_IMPORT_ROWS) {
+      throw new BadRequestError(
+        `That file has ${reading.rows.length.toLocaleString('en-US')} rows. Split it into ` +
+          `files of ${MAX_IMPORT_ROWS.toLocaleString('en-US')} or fewer.`,
+      );
+    }
+    const existing = await loadExistingBySku(reading.skus);
+    return planItemImport(reading, existing);
+  } catch (error) {
+    if (error instanceof CsvParseError) {
+      throw new BadRequestError(`Line ${error.line}: ${error.message}`, {
+        csv: `Line ${error.line}: ${error.message}`,
+      });
+    }
+    if (error instanceof ItemImportError) throw new BadRequestError(error.message);
+    throw error;
+  }
+}
+
+itemsRouter.post(
+  '/import/preview',
+  requireRole('member'),
+  asyncHandler(async (req, res) => {
+    res.json(summarizeImport(await planFromRequest(req.body)));
+  }),
+);
+
+itemsRouter.post(
+  '/import',
+  requireRole('member'),
+  asyncHandler(async (req, res) => {
+    const plan = await planFromRequest(req.body);
+
+    /*
+     * All or nothing. The ticket's rule for a parse error is the whole file,
+     * and the same reasoning holds one level down: a person who uploads four
+     * thousand rows wants the four thousand, not "3,986 of them, good luck
+     * working out which". They fix the six rows and upload again.
+     */
+    const failed = plan.rows.filter((row) => row.action === 'error');
+    if (failed.length > 0) {
+      const fields: Record<string, string> = {};
+      for (const row of failed.slice(0, 50)) {
+        fields[`line ${row.line}`] = row.issues[0]?.message ?? 'Invalid row';
+      }
+      throw new BadRequestError(
+        `${failed.length} row${failed.length === 1 ? '' : 's'} still need fixing. Nothing was imported.`,
+        fields,
+      );
+    }
+
+    res.json(await applyItemImport(plan));
   }),
 );
 
