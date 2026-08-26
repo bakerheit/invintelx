@@ -23,6 +23,7 @@ import {
   type MovementDoc,
 } from './db.js';
 import { hashPassword } from './lib/password.js';
+import { runMigrations } from './migrations/index.js';
 
 const DEMO_EMAIL = 'demo@invintelx.org';
 const DEMO_PASSWORD = 'invintelx-demo-password';
@@ -183,6 +184,9 @@ async function main(): Promise<void> {
   }
 
   await connect();
+  // Same order as boot, so a seeded development database is at the version the
+  // code expects rather than looking un-migrated to the next `pnpm dev`.
+  await runMigrations();
   await ensureIndexes();
 
   console.log(`Seeding ${env.MONGODB_DB}...`);

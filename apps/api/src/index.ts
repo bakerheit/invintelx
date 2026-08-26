@@ -2,6 +2,7 @@ import { env } from './env.js';
 import { connect, disconnect, ensureIndexes } from './db.js';
 import { createApp } from './app.js';
 import { prepareFirstAdminSetup, type SetupAnnouncement } from './lib/setup.js';
+import { MigrationError, runMigrations } from './migrations/index.js';
 
 const RULE = '─'.repeat(62);
 
@@ -34,6 +35,10 @@ function announceSetup(setup: SetupAnnouncement): void {
 
 async function main(): Promise<void> {
   await connect();
+  // Before anything reads or writes application data, and before the server
+  // listens. A boot that gets past this is a boot whose code and database agree
+  // about the shape; one that does not must not serve a single request.
+  await runMigrations();
   await ensureIndexes();
   announceSetup(await prepareFirstAdminSetup());
 
@@ -56,6 +61,21 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
+  /*
+   * A migration failure is an operator's problem, not a programmer's, and its
+   * message is written for one. A stack trace above it would only bury the
+   * sentence that says what to do.
+   */
+  if (err instanceof MigrationError) {
+    console.error(`[invintelx-api] ${RULE}`);
+    console.error('[invintelx-api] Refusing to start: the database is not in a shape this build');
+    console.error('[invintelx-api] can safely use.');
+    console.error('[invintelx-api]');
+    for (const line of err.message.split('\n')) console.error(`[invintelx-api] ${line}`);
+    console.error(`[invintelx-api] ${RULE}`);
+    process.exit(1);
+  }
+
   console.error('[invintelx-api] failed to start', err);
   process.exit(1);
 });
