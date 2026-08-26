@@ -6,6 +6,8 @@ import { errorHandler, notFoundHandler } from './middleware/error.js';
 import { loadUser, requireAuth } from './middleware/auth.js';
 import { authRouter } from './routes/auth.js';
 import { itemsRouter } from './routes/items.js';
+import { locationsRouter } from './routes/locations.js';
+import { movementsRouter } from './routes/movements.js';
 
 export function createApp(): Express {
   const app = express();
@@ -52,6 +54,8 @@ export function createApp(): Express {
   app.use(loadUser);
   app.use('/api/auth', authRouter);
   app.use('/api/items', requireAuth, itemsRouter);
+  app.use('/api/locations', requireAuth, locationsRouter);
+  app.use('/api/movements', requireAuth, movementsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

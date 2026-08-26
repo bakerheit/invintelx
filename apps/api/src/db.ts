@@ -1,5 +1,5 @@
-import { MongoClient, type Collection, type Db, type ObjectId } from 'mongodb';
-import type { ItemStatus, Role, UnitOfMeasure } from '@invintelx/shared';
+import { MongoClient, ObjectId, type Collection, type Db } from 'mongodb';
+import type { ItemStatus, LocationType, MovementType, Role, UnitOfMeasure } from '@invintelx/shared';
 import { env } from './env.js';
 
 export interface UserDoc {
@@ -40,6 +40,53 @@ export interface ItemDoc {
   updatedAt: Date;
 }
 
+export interface LocationDoc {
+  _id: ObjectId;
+  code: string;
+  name: string;
+  type: LocationType;
+  parentId: ObjectId | null;
+  /** Root first, self last. Enables one indexed query for a whole subtree. */
+  path: ObjectId[];
+  pathLabel: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MovementDoc {
+  _id: ObjectId;
+  itemId: ObjectId;
+  itemSku: string;
+  itemName: string;
+  locationId: ObjectId;
+  locationCode: string;
+  /** Signed. Positive adds at the location, negative removes. */
+  quantity: number;
+  type: MovementType;
+  reference: string;
+  note: string;
+  /** When the stock actually moved, which is not always when it was recorded. */
+  occurredAt: Date;
+  actorId: ObjectId;
+  actorName: string;
+  createdAt: Date;
+}
+
+/**
+ * Projection of the ledger, never authored directly. rebuildStockLevels
+ * recomputes it from movements, which is what makes it verifiable rather than
+ * merely trusted.
+ */
+export interface StockLevelDoc {
+  _id: ObjectId;
+  itemId: ObjectId;
+  locationId: ObjectId;
+  locationCode: string;
+  onHand: number;
+  updatedAt: Date;
+}
+
 let client: MongoClient | undefined;
 let db: Db | undefined;
 
@@ -73,6 +120,10 @@ export async function disconnect(): Promise<void> {
 export const users = (): Collection<UserDoc> => getDb().collection<UserDoc>('users');
 export const sessions = (): Collection<SessionDoc> => getDb().collection<SessionDoc>('sessions');
 export const items = (): Collection<ItemDoc> => getDb().collection<ItemDoc>('items');
+export const locations = (): Collection<LocationDoc> => getDb().collection<LocationDoc>('locations');
+export const movements = (): Collection<MovementDoc> => getDb().collection<MovementDoc>('movements');
+export const stockLevels = (): Collection<StockLevelDoc> =>
+  getDb().collection<StockLevelDoc>('stockLevels');
 
 /**
  * Idempotent. Run at boot so a fresh database is correct without a migration
@@ -92,6 +143,68 @@ export async function ensureIndexes(): Promise<void> {
   await items().createIndex({ status: 1, updatedAt: -1 }, { name: 'by_status_updated' });
   await items().createIndex({ category: 1 }, { name: 'by_category' });
   await items().createIndex({ name: 1 }, { name: 'by_name' });
+
+  await locations().createIndex({ code: 1 }, { unique: true, name: 'uniq_code' });
+  await locations().createIndex({ parentId: 1 }, { name: 'by_parent' });
+  // Subtree queries filter on path membership, so it has to be indexed.
+  await locations().createIndex({ path: 1 }, { name: 'by_path' });
+  await locations().createIndex({ type: 1, isActive: 1 }, { name: 'by_type_active' });
+
+  // The demand series aggregates movements per item over a date window, and the
+  // item history page reads one item newest-first. Both are this index.
+  await movements().createIndex({ itemId: 1, occurredAt: -1 }, { name: 'by_item_occurred' });
+  await movements().createIndex({ locationId: 1, occurredAt: -1 }, { name: 'by_location_occurred' });
+  await movements().createIndex({ type: 1, occurredAt: -1 }, { name: 'by_type_occurred' });
+
+  await stockLevels().createIndex(
+    { itemId: 1, locationId: 1 },
+    { unique: true, name: 'uniq_item_location' },
+  );
+  await stockLevels().createIndex({ itemId: 1 }, { name: 'by_item' });
+}
+
+/**
+ * Recompute every on-hand figure from the ledger.
+ *
+ * The projection is only worth trusting if it can be re-derived, so this exists
+ * as much to prove the invariant as to repair it. Safe to run at any time: the
+ * ledger is the source of truth and this only rewrites what is downstream of it.
+ */
+export async function rebuildStockLevels(): Promise<{ levels: number; movements: number }> {
+  const totalMovements = await movements().countDocuments({});
+
+  const computed = await movements()
+    .aggregate<{
+      _id: { itemId: ObjectId; locationId: ObjectId };
+      onHand: number;
+      locationCode: string;
+    }>([
+      {
+        $group: {
+          _id: { itemId: '$itemId', locationId: '$locationId' },
+          onHand: { $sum: '$quantity' },
+          locationCode: { $last: '$locationCode' },
+        },
+      },
+    ])
+    .toArray();
+
+  const now = new Date();
+  await stockLevels().deleteMany({});
+  if (computed.length > 0) {
+    await stockLevels().insertMany(
+      computed.map((row) => ({
+        _id: new ObjectId(),
+        itemId: row._id.itemId,
+        locationId: row._id.locationId,
+        locationCode: row.locationCode,
+        onHand: row.onHand,
+        updatedAt: now,
+      })),
+    );
+  }
+
+  return { levels: computed.length, movements: totalMovements };
 }
 
 export async function healthcheck(): Promise<boolean> {

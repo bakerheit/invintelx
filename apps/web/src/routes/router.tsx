@@ -5,10 +5,14 @@ import { LoginPage } from '@/features/auth/LoginPage';
 import { RegisterPage } from '@/features/auth/RegisterPage';
 import { ItemsPage } from '@/features/items/ItemsPage';
 import { NotFoundPage } from './NotFoundPage';
+import { RouteError } from './RouteError';
 
 export const router = createBrowserRouter([
   {
     element: <PublicOnlyRoute />,
+    // Every branch gets a boundary. A throw with no errorElement above it
+    // unmounts the whole tree and paints nothing.
+    errorElement: <RouteError />,
     children: [
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
@@ -16,6 +20,7 @@ export const router = createBrowserRouter([
   },
   {
     element: <ProtectedRoute />,
+    errorElement: <RouteError />,
     children: [
       {
         element: <AppShell />,

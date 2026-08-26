@@ -1,5 +1,5 @@
-import type { Item, PublicUser } from '@invintelx/shared';
-import type { ItemDoc, UserDoc } from './db.js';
+import type { Item, Location, Movement, PublicUser, StockLevel } from '@invintelx/shared';
+import type { ItemDoc, LocationDoc, MovementDoc, StockLevelDoc, UserDoc } from './db.js';
 
 /**
  * Documents never go to the client directly. Going through an explicit mapper
@@ -32,6 +32,50 @@ export function toItem(doc: ItemDoc): Item {
     status: doc.status,
     attributes: doc.attributes,
     createdAt: doc.createdAt.toISOString(),
+    updatedAt: doc.updatedAt.toISOString(),
+  };
+}
+
+export function toLocation(doc: LocationDoc): Location {
+  return {
+    id: doc._id.toHexString(),
+    code: doc.code,
+    name: doc.name,
+    type: doc.type,
+    parentId: doc.parentId ? doc.parentId.toHexString() : null,
+    path: doc.path.map((id) => id.toHexString()),
+    pathLabel: doc.pathLabel,
+    isActive: doc.isActive,
+    createdAt: doc.createdAt.toISOString(),
+    updatedAt: doc.updatedAt.toISOString(),
+  };
+}
+
+export function toMovement(doc: MovementDoc): Movement {
+  return {
+    id: doc._id.toHexString(),
+    itemId: doc.itemId.toHexString(),
+    itemSku: doc.itemSku,
+    itemName: doc.itemName,
+    locationId: doc.locationId.toHexString(),
+    locationCode: doc.locationCode,
+    quantity: doc.quantity,
+    type: doc.type,
+    reference: doc.reference,
+    note: doc.note,
+    occurredAt: doc.occurredAt.toISOString(),
+    actorId: doc.actorId.toHexString(),
+    actorName: doc.actorName,
+    createdAt: doc.createdAt.toISOString(),
+  };
+}
+
+export function toStockLevel(doc: StockLevelDoc): StockLevel {
+  return {
+    itemId: doc.itemId.toHexString(),
+    locationId: doc.locationId.toHexString(),
+    locationCode: doc.locationCode,
+    onHand: doc.onHand,
     updatedAt: doc.updatedAt.toISOString(),
   };
 }
