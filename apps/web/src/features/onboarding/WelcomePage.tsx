@@ -146,9 +146,10 @@ function demoAction(
     );
   }
 
-  // Refused by the server too — this only saves somebody the round trip and
-  // says why, which a disabled button on its own would not.
-  if (!state.empty) {
+  // The server's own answer, not a guess from `empty` — so an instance holding
+  // the wreckage of a load that died half way through still gets the button
+  // that clears it up, rather than being told it has data of its own.
+  if (!state.canLoadDemo) {
     return (
       <p className="text-sm text-muted-foreground">
         Not offered once an instance has data of its own: made-up SKUs mixed into

@@ -40,6 +40,14 @@ export const onboardingStateSchema = z.object({
   empty: z.boolean(),
   /** Null unless the demo dataset is loaded right now. */
   demo: demoDataStateSchema.nullable(),
+  /**
+   * Whether loading the demo dataset would be accepted.
+   *
+   * Not the same question as `empty`, and the client must not guess it from
+   * that: an instance holding only the wreckage of a load that died half way
+   * through is not empty, and loading the demo is exactly what it needs.
+   */
+  canLoadDemo: z.boolean(),
   /** Whether the signed-in account may load or remove it. Admin only. */
   canManageDemo: z.boolean(),
 });
