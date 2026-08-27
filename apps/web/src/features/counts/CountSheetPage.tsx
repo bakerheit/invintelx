@@ -64,6 +64,15 @@ export function CountSheetPage() {
   const isOpen = data?.status === 'open';
   const canWrite = user?.role !== 'viewer';
 
+  /*
+   * The one line currently being written, and no other. Somebody walking a
+   * shelf taps the next box before the last one has answered, so disabling
+   * every entry on any request in flight would blank the screen once per number
+   * typed — and hide each row's clear button with it. `variables` outlives the
+   * request it belongs to, hence the `isPending` guard.
+   */
+  const savingLineId = record.isPending ? record.variables?.lineId : undefined;
+
   const lines = useMemo(
     () => (data ? (view === 'counting' ? sortForCounting(data.lines) : sortForReview(data.lines)) : []),
     [data, view],
@@ -255,7 +264,11 @@ export function CountSheetPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       {isOpen && canWrite ? (
-                        <CountEntry line={line} disabled={record.isPending} onRecord={onRecord} />
+                        <CountEntry
+                          line={line}
+                          disabled={savingLineId === line.id}
+                          onRecord={onRecord}
+                        />
                       ) : (
                         <span className="tabular">
                           {line.countedQuantity === null ? '—' : line.countedQuantity}

@@ -251,6 +251,129 @@ describe('opening a sheet', () => {
   });
 });
 
+/*
+ * Two open sheets over one SKU are two frozen copies of the same expected
+ * figure, and accepting both posts the same variance twice. Everything in here
+ * is that one failure, approached from the sides it can arrive from.
+ */
+describe('one open count per item per bin', () => {
+  it('leaves the bin at the counted figure rather than doubling the variance', async () => {
+    // The failure this whole section exists for, written as the numbers.
+    const bin = await makeBin('D-01');
+    const itemId = await makeItem('DOUBLE-1');
+    await receive(itemId, bin, 10);
+
+    const first = await openSheet({ locationId: bin }).expect(201);
+    const second = await openSheet({ locationId: bin });
+    expect(second.status).toBe(409);
+
+    await count(first.body.id, lineFor(first.body, 'DOUBLE-1').id, 8).expect(200);
+    await request(app)
+      .post(`/api/counts/${first.body.id}/post`)
+      .set('Cookie', cookie)
+      .send({ lineIds: [lineFor(first.body, 'DOUBLE-1').id] })
+      .expect(201);
+
+    // 8, not 6. A second sheet frozen at 10 would have posted another -2.
+    expect(await onHandAt(itemId, 'D-01')).toBe(8);
+    expect(await db.countSheets().countDocuments({})).toBe(1);
+  });
+
+  it('names the sheet and the items, because the answer is to go and find it', async () => {
+    const bin = await makeBin('D-02');
+    await receive(await makeItem('CLASH-1'), bin, 4);
+
+    const first = await openSheet({ locationId: bin }).expect(201);
+    const refused = await openSheet({ locationId: bin }).expect(409);
+
+    expect(refused.body.error.message).toContain(first.body.reference);
+    expect(refused.body.error.message).toContain('CLASH-1');
+    expect(refused.body.error.message).toContain('D-02');
+    expect(refused.body.error.fields.locationId).toBeDefined();
+  });
+
+  it('refuses a whole-bin sheet over an item some other sheet named', async () => {
+    // The narrow sheet came first, so the wide one is the one that overlaps.
+    const bin = await makeBin('D-03');
+    const spot = await makeItem('SPOT-1');
+    const rest = await makeItem('REST-1');
+    await receive(spot, bin, 3);
+    await receive(rest, bin, 3);
+
+    await openSheet({ locationId: bin, itemIds: [spot] }).expect(201);
+    await openSheet({ locationId: bin }).expect(409);
+    // ...and the half nobody is counting is still countable.
+    await openSheet({ locationId: bin, itemIds: [rest] }).expect(201);
+  });
+
+  it('lets a different bin count the same item at the same time', async () => {
+    // Two bins are two stock rows, so two variances are two corrections.
+    const here = await makeBin('D-04');
+    const there = await makeBin('D-05');
+    const itemId = await makeItem('BOTH-1');
+    await receive(itemId, here, 5);
+    await receive(itemId, there, 5);
+
+    await openSheet({ locationId: here }).expect(201);
+    await openSheet({ locationId: there }).expect(201);
+  });
+
+  it('releases the items when the sheet closes, so the bin can be counted again', async () => {
+    const bin = await makeBin('D-06');
+    const itemId = await makeItem('AGAIN-1');
+    await receive(itemId, bin, 6);
+
+    const first = await openSheet({ locationId: bin }).expect(201);
+    await openSheet({ locationId: bin }).expect(409);
+
+    await count(first.body.id, lineFor(first.body, 'AGAIN-1').id, 5).expect(200);
+    await request(app)
+      .post(`/api/counts/${first.body.id}/post`)
+      .set('Cookie', cookie)
+      .send({ lineIds: [lineFor(first.body, 'AGAIN-1').id] })
+      .expect(201);
+
+    // A recount reads the corrected books, which is the point of recounting.
+    const second = await openSheet({ locationId: bin }).expect(201);
+    expect(lineFor(second.body, 'AGAIN-1').expectedQuantity).toBe(5);
+  });
+
+  it('releases the items when the sheet is cancelled', async () => {
+    const bin = await makeBin('D-07');
+    await receive(await makeItem('SCRAP-1'), bin, 2);
+
+    const first = await openSheet({ locationId: bin }).expect(201);
+    await request(app)
+      .post(`/api/counts/${first.body.id}/cancel`)
+      .set('Cookie', cookie)
+      .send({})
+      .expect(200);
+
+    await openSheet({ locationId: bin }).expect(201);
+  });
+
+  it('lets exactly one of four simultaneous requests through', async () => {
+    /*
+     * The check reads before it writes, so four requests can all find nothing
+     * open and all go on to insert. `uniq_open_line` is what decides it, and
+     * the losers have to come back as the same refusal rather than as a 500.
+     */
+    const bin = await makeBin('D-08');
+    await receive(await makeItem('RACE-1'), bin, 9);
+
+    const results = await Promise.all([
+      openSheet({ locationId: bin }),
+      openSheet({ locationId: bin }),
+      openSheet({ locationId: bin }),
+      openSheet({ locationId: bin }),
+    ]);
+
+    const statuses = results.map((response) => response.status).sort();
+    expect(statuses).toEqual([201, 409, 409, 409]);
+    expect(await db.countSheets().countDocuments({ status: 'open' })).toBe(1);
+  });
+});
+
 describe('recording counts', () => {
   it('records a count and works out the variance', async () => {
     const bin = await makeBin('R-01');
@@ -526,14 +649,18 @@ describe('accepting variances', () => {
 
   it('refuses a line id from another sheet', async () => {
     const bin = await makeBin('P-09');
-    await receive(await makeItem('OTHER-1'), bin, 5);
-    const first = await openSheet({ locationId: bin }).expect(201);
-    const second = await openSheet({ locationId: bin }).expect(201);
+    const mine = await makeItem('OTHER-1');
+    const theirs = await makeItem('OTHER-2');
+    await receive(mine, bin, 5);
+    await receive(theirs, bin, 5);
+    // Disjoint items, because two open sheets may not share one.
+    const first = await openSheet({ locationId: bin, itemIds: [mine] }).expect(201);
+    const second = await openSheet({ locationId: bin, itemIds: [theirs] }).expect(201);
 
     await request(app)
       .post(`/api/counts/${first.body.id}/post`)
       .set('Cookie', cookie)
-      .send({ lineIds: [lineFor(second.body, 'OTHER-1').id] })
+      .send({ lineIds: [lineFor(second.body, 'OTHER-2').id] })
       .expect(400);
   });
 
@@ -736,10 +863,13 @@ describe('cancelling and listing', () => {
 
   it('lists sheets newest first, with their summary and without their lines', async () => {
     const bin = await makeBin('X-03');
-    await receive(await makeItem('LIST-1'), bin, 10);
-    const first = await openSheet({ locationId: bin }).expect(201);
+    const listed = await makeItem('LIST-1');
+    const other = await makeItem('LIST-2');
+    await receive(listed, bin, 10);
+    await receive(other, bin, 10);
+    const first = await openSheet({ locationId: bin, itemIds: [listed] }).expect(201);
     await count(first.body.id, lineFor(first.body, 'LIST-1').id, 7).expect(200);
-    const second = await openSheet({ locationId: bin }).expect(201);
+    const second = await openSheet({ locationId: bin, itemIds: [other] }).expect(201);
 
     const list = await request(app).get('/api/counts').set('Cookie', cookie).expect(200);
 
@@ -752,9 +882,12 @@ describe('cancelling and listing', () => {
 
   it('filters by status', async () => {
     const bin = await makeBin('X-04');
-    await receive(await makeItem('FILT-1'), bin, 10);
-    const open = await openSheet({ locationId: bin }).expect(201);
-    const doomed = await openSheet({ locationId: bin }).expect(201);
+    const kept = await makeItem('FILT-1');
+    const dropped = await makeItem('FILT-2');
+    await receive(kept, bin, 10);
+    await receive(dropped, bin, 10);
+    const open = await openSheet({ locationId: bin, itemIds: [kept] }).expect(201);
+    const doomed = await openSheet({ locationId: bin, itemIds: [dropped] }).expect(201);
     await request(app)
       .post(`/api/counts/${doomed.body.id}/cancel`)
       .set('Cookie', cookie)

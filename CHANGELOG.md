@@ -50,7 +50,10 @@ this release is on the only shape the data has ever had.
   cutting the sheet and accepting it stays on the books rather than being
   silently overwritten. `GET/POST /api/counts`, `GET /api/counts/:id`,
   `PATCH /api/counts/:id/lines/:lineId`, `POST /api/counts/:id/post` and
-  `POST /api/counts/:id/cancel`, with a screen at `/counts`. Adds a
+  `POST /api/counts/:id/cancel`, with a screen at `/counts`. One open sheet per
+  item per bin: two sheets over the same SKU would each freeze the same expected
+  figure and accepting both would post the same variance twice, so opening the
+  second is refused and names the sheet already counting it. Adds a
   `countSheets` collection — dump it, because nothing else records what was
   expected, what was found and who signed it off.
 - Suppliers: model and REST API, with contact details, payment terms and the

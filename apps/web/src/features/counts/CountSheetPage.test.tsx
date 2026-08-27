@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router';
@@ -13,6 +13,8 @@ const ACTOR_ID = 'dddddddddddddddddddddddd';
 const BIN_ID = 'eeeeeeeeeeeeeeeeeeeeeeee';
 
 let lastPostBody: unknown;
+/** Answers the count that is being held open. See `stubApi`. */
+let releaseCount: () => void = () => {};
 
 function line(
   id: string,
@@ -65,9 +67,27 @@ function sheet(status: 'open' | 'posted' = 'open') {
 
 function stubApi(role: Role, status: 'open' | 'posted' = 'open') {
   lastPostBody = undefined;
+  releaseCount = () => {};
 
   vi.stubGlobal('fetch', (input: string, init?: RequestInit) => {
     const path = String(input).split('?')[0] ?? '';
+
+    /*
+     * Held open until the test says otherwise. "One line is saving" is a state
+     * that only exists while a request is unanswered, so a stub that answered
+     * immediately could not show what the rest of the screen does during it.
+     */
+    if (path.startsWith(`/api/counts/${SHEET_ID}/lines/`)) {
+      return new Promise<Response>((resolve) => {
+        releaseCount = () =>
+          resolve(
+            new Response(JSON.stringify(sheet(status)), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          );
+      });
+    }
 
     if (path === '/api/auth/me') {
       return Promise.resolve(
@@ -223,6 +243,35 @@ describe('accepting variances', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Accept 1 line$/ }));
 
     expect(lastPostBody).toEqual({ lineIds: ['2222222222222222222222bb'], note: '' });
+  });
+});
+
+describe('recording a count while walking a shelf', () => {
+  beforeEach(() => stubApi('member'));
+  afterEach(() => releaseCount());
+
+  it('disables only the line being saved, so the next box is ready', async () => {
+    renderPage();
+    await screen.findByLabelText('Variance summary');
+
+    const alpha = screen.getByLabelText('Counted quantity for ALPHA-1');
+    await userEvent.clear(alpha);
+    await userEvent.type(alpha, '7');
+    await userEvent.tab();
+
+    // The request for ALPHA-1 is in flight and deliberately unanswered.
+    await waitFor(() => expect(alpha).toBeDisabled());
+
+    // The next box down is where the finger is going, so it has to be live.
+    expect(screen.getByLabelText('Counted quantity for BETA-2')).toBeEnabled();
+    expect(screen.getByLabelText('Counted quantity for GAMMA-3')).toBeEnabled();
+    // And a row that is not saving keeps the button that clears its count.
+    expect(
+      screen.getByRole('button', { name: 'Clear the count for BETA-2' }),
+    ).toBeInTheDocument();
+
+    releaseCount();
+    await waitFor(() => expect(alpha).toBeEnabled());
   });
 });
 

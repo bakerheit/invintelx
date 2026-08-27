@@ -1,8 +1,4 @@
-import { lineVariance, summariseCountSheet } from '@invintelx/shared';
 import type {
-  CountSheet,
-  CountSheetDetail,
-  CountSheetLine,
   Item,
   Location,
   Movement,
@@ -12,8 +8,6 @@ import type {
   SupplierItem,
 } from '@invintelx/shared';
 import type {
-  CountSheetDoc,
-  CountSheetLineDoc,
   ItemDoc,
   LocationDoc,
   MovementDoc,
@@ -22,6 +16,16 @@ import type {
   SupplierItemDoc,
   UserDoc,
 } from './db.js';
+/*
+ * Counts import in a block of their own rather than joining the two lists
+ * above, and out of alphabetical order on purpose. INVX-63 adds `AuditEntry`
+ * and `AuditEntryDoc` to the head of those same two lists; a list both branches
+ * edit is a conflict however small either addition is, and that is what
+ * bounced this branch's first merge. Same names, nothing left to argue about.
+ */
+import { lineVariance, summariseCountSheet } from '@invintelx/shared';
+import type { CountSheet, CountSheetDetail, CountSheetLine } from '@invintelx/shared';
+import type { CountSheetDoc, CountSheetLineDoc } from './db.js';
 
 /**
  * Documents never go to the client directly. Going through an explicit mapper

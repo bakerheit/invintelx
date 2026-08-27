@@ -354,6 +354,22 @@ export async function ensureIndexes(): Promise<void> {
   // "What is open right now" is the counting screen's only question.
   await countSheets().createIndex({ status: 1, createdAt: -1 }, { name: 'by_status_created' });
   await countSheets().createIndex({ locationId: 1, createdAt: -1 }, { name: 'by_location_created' });
+  /*
+   * One open count per item per bin. Two open sheets over the same SKU each
+   * freeze the same expected figure, so accepting both posts the same variance
+   * twice and leaves the bin at a number nobody counted. openCountSheet refuses
+   * that with a readable message; this is what makes the refusal true when two
+   * requests check at the same moment and both find nothing. Partial on status,
+   * so closing a sheet releases its items rather than blocking the bin forever.
+   */
+  await countSheets().createIndex(
+    { locationId: 1, 'lines.itemId': 1 },
+    {
+      unique: true,
+      name: 'uniq_open_line',
+      partialFilterExpression: { status: 'open' },
+    },
+  );
 }
 
 interface LedgerTotal {

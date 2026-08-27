@@ -14,6 +14,7 @@ import {
   type CountSheetDoc,
   type CountSheetLineDoc,
   type ItemDoc,
+  type LocationDoc,
   type MovementDoc,
 } from '../db.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../errors.js';
@@ -47,8 +48,28 @@ function referenceFor(id: ObjectId): string {
   return `CC-${id.toHexString().slice(-8).toUpperCase()}`;
 }
 
-function isDuplicateKey(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: number }).code === 11000;
+/**
+ * Which unique index a write collided with, or null if it did not collide.
+ *
+ * Two of them can fire on the same insert and they mean opposite things: a
+ * reference collision is bad luck and is retried, an overlap collision is the
+ * refusal below and must never be retried into success. Reading the key pattern
+ * is how they are told apart — matching on the code alone would turn a refusal
+ * into five silent retries and then a message about references.
+ */
+function duplicateKeyOn(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const detail = error as { code?: number; keyPattern?: Record<string, unknown> };
+  if (detail.code !== 11000) return null;
+  return Object.keys(detail.keyPattern ?? {}).join(',');
+}
+
+function isDuplicateReference(error: unknown): boolean {
+  return duplicateKeyOn(error) === 'reference';
+}
+
+function isDuplicateOpenLine(error: unknown): boolean {
+  return duplicateKeyOn(error) === 'locationId,lines.itemId';
 }
 
 /** Sorted by SKU, because that is the order somebody walks a shelf reading labels. */
@@ -71,6 +92,56 @@ function buildLines(
       postedQuantity: null,
     }))
     .sort((a, b) => a.itemSku.localeCompare(b.itemSku));
+}
+
+/**
+ * The refusal that stops one variance being applied twice, or null if these
+ * items are nobody else's count right now.
+ *
+ * Two open sheets on one bin are two frozen copies of the same expected figure.
+ * Books say 10, both count 8, accept the first: on-hand is 8 and correct.
+ * Accept the second and it posts its own -2 against the 10 it froze, so the bin
+ * lands at 6 for stock nobody recounted. `postCountSheet` cannot see this — its
+ * claim is on one document — so the only place to refuse is before the second
+ * sheet exists.
+ *
+ * Overlap is per item rather than per bin. Counting BOLT-1 in A-01 is no reason
+ * to refuse a sheet for NUT-1 in A-01, and a bin big enough to need counting in
+ * parts is the case this feature has a line ceiling for.
+ */
+async function openOverlapConflict(
+  location: LocationDoc,
+  itemDocs: ItemDoc[],
+): Promise<ConflictError | null> {
+  const wanted = new Set(itemDocs.map((item) => item._id.toHexString()));
+  const openHere = await countSheets()
+    .find({
+      locationId: location._id,
+      status: 'open',
+      'lines.itemId': { $in: itemDocs.map((item) => item._id) },
+    })
+    .toArray();
+
+  const clashes = openHere.flatMap((sheet) =>
+    sheet.lines
+      .filter((line) => wanted.has(line.itemId.toHexString()))
+      .map((line) => ({ reference: sheet.reference, sku: line.itemSku })),
+  );
+  if (clashes.length === 0) return null;
+
+  const references = [...new Set(clashes.map((clash) => clash.reference))].sort();
+  const skus = [...new Set(clashes.map((clash) => clash.sku))].sort();
+  // Named rather than counted, because the answer is to go and find that sheet.
+  const shown = skus.slice(0, 5);
+  const listed =
+    skus.length > shown.length
+      ? `${shown.join(', ')} and ${skus.length - shown.length} more`
+      : shown.join(', ');
+
+  return new ConflictError(
+    `Already being counted at ${location.code}: ${listed} (on ${references.join(', ')}). Finish or cancel that sheet, or name only the items it does not cover.`,
+    { locationId: 'Another open sheet covers these items' },
+  );
 }
 
 /**
@@ -148,6 +219,9 @@ export async function openCountSheet(input: {
     );
   }
 
+  const overlap = await openOverlapConflict(location, itemDocs);
+  if (overlap) throw overlap;
+
   const now = new Date();
   const base = {
     locationId: location._id,
@@ -177,7 +251,20 @@ export async function openCountSheet(input: {
       await countSheets().insertOne(doc);
       return doc;
     } catch (error) {
-      if (!isDuplicateKey(error)) throw error;
+      /*
+       * The check above lost a race: two requests both read no open sheet and
+       * both went on to insert. `uniq_open_line` is what makes the refusal true
+       * rather than likely — the same reason the reference has an index instead
+       * of a hope. Re-ask for the message so the loser is told which sheet won,
+       * and fall back only if that sheet has closed in the meantime.
+       */
+      if (isDuplicateOpenLine(error)) {
+        throw (
+          (await openOverlapConflict(location, itemDocs)) ??
+          new ConflictError('Another sheet claimed these items first. Reload and try again.')
+        );
+      }
+      if (!isDuplicateReference(error)) throw error;
     }
   }
   throw new ConflictError('Could not allocate a count sheet reference. Try again.');
