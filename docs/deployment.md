@@ -12,6 +12,15 @@ against. This page is about everything that is not a variable.
 > [README](../README.md) says. There is no published container image yet, and starting the process
 > from a source build has a known gap of its own (below). The operational rules on this page — TLS,
 > proxying, cookies, the probe — are true today and do not change when the image lands.
+>
+> [docs/support-policy.md](support-policy.md) draws the line this page has to live on, and it is
+> worth knowing before you follow the instructions here. **A bug in InvIntelX is welcome wherever
+> you noticed it**, a self-hosted instance included, and a page here that tells you to do something
+> that does not work counts as one. Your proxy, your TLS, your MongoDB and your orchestrator are
+> yours: this guide shows a configuration that works, and the day yours does not, that is a
+> question this project may not answer. Everything below is written to make that line survivable —
+> it says what a mistake looks like from the outside, because you are the one who will be
+> diagnosing it.
 
 ## What an instance is
 
@@ -31,8 +40,9 @@ changes are written in one transaction, and MongoDB offers transactions only on 
 instance pointed at a standalone `mongod` boots, signs people in, shows the item screens, and fails
 the first time anybody moves stock.
 
-**More than one API process is allowed**, and there are three things to get right before you run
-one — clocks, the proxy in front, and what happens when the database is unreachable. See
+**More than one API process is allowed** — the thing that used to make it unsafe is gone, though
+nobody has actually run it. Three things to get right before you do: clocks, the proxy in front,
+and what happens when the database is unreachable. See
 [running more than one instance](#running-more-than-one-instance).
 
 ## Starting the process
@@ -178,6 +188,14 @@ observed), or do not set `NODE_ENV=production` — which is not a real option, b
 the switch for the `Secure` cookie flag above. The two are the same variable and there is currently
 no way to want one without the other. Run the proxy.
 
+Where this sits with [SECURITY.md](../SECURITY.md) is worth knowing before you report it as a hole.
+That page's list of documented behaviours that are not vulnerabilities covers the 10 000-key refusal
+explicitly, and covers "configuration you chose" — no TLS in front of the instance, `NODE_ENV` left
+unset. It does not name running with no proxy at all, in either direction. So treat this as a
+topology to avoid rather than as something that will be fixed underneath you: nothing in the
+application can tell whether a proxy is there, and until something can, `X-Forwarded-For` is exactly
+as trustworthy as whatever is allowed to reach the port.
+
 ## Running more than one instance
 
 Point several API processes at the same MongoDB and put your proxy in front of all of them. There
@@ -189,6 +207,16 @@ Buckets are documents in a `rateLimits` collection, keyed by limiter name, windo
 address, counted with a single atomic `$inc` and swept by a TTL index. **The quota is the
 deployment's, not each process's** — two instances no longer mean twice the limit, which is what
 made running two of them unsafe before.
+
+**Removing the obstacle is not the same as having run the topology, and nothing here has.**
+[docs/support-policy.md](support-policy.md) puts more than one API instance behind a load balancer
+on the out-of-scope list for exactly that reason, so read the rest of this section as the reasoning
+you can check your deployment against rather than as a recipe somebody has followed. The limiter
+itself is tested against a real `mongod`, including the claim that matters most here — two limiter
+instances over one database share a quota rather than getting one each — and so is the key cap.
+What no test covers is failing closed when Mongo is unreachable, and what nothing covers is several
+processes, a real load balancer and two clocks, together, under load. If you are the first to run
+that, the project would rather hear what broke than not.
 
 Three things to get right.
 
@@ -316,3 +344,15 @@ rather than on it. Dump the whole database: on-hand figures are a projection and
 but the movement ledger and the append-only audit log are not derived from anything and a lost one
 is lost. `mongodump` without `--oplog` will not give you a consistent copy of the ledger, and
 `pnpm db:verify` is what turns "the restore worked" from a hope into a check.
+
+## When something here is wrong
+
+A page that tells you to do something that does not work is a bug, and
+[docs/support-policy.md](support-policy.md) counts it as one — file it against the version at
+`/api/health`, saying it was your own deployment. That answer does not get an issue closed; it gets
+it read with the right question in mind.
+
+A security hole is the exception and does not go in an issue at all.
+[SECURITY.md](../SECURITY.md) has the private disclosure route and the list of things already
+argued as deliberate. It asks a report to say which version, and whether there is a reverse proxy in
+front — this page is why that second question carries as much weight as it does.
