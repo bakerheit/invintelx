@@ -100,6 +100,28 @@ function stubApi(role: Role) {
       total: 2,
       totalPages: 1,
     },
+    [`/api/audit/item/${ITEM_ID}`]: {
+      data: [
+        {
+          id: '111111111111111111111111',
+          actorId: ACTOR_ID,
+          actorName: 'Randy Marsh',
+          action: 'update',
+          entityType: 'item',
+          entityId: ITEM_ID,
+          entityLabel: 'BOLT-M6-30',
+          changes: [
+            { field: 'unitCostCents', before: 95, after: 120, redacted: false },
+            { field: 'reorderPoint', before: 4, after: 10, redacted: false },
+          ],
+          createdAt: '2026-08-19T14:30:00.000Z',
+        },
+      ],
+      page: 1,
+      pageSize: 10,
+      total: 1,
+      totalPages: 1,
+    },
     [`/api/analytics/demand/${ITEM_ID}`]: {
       stats: {
         itemId: ITEM_ID,
@@ -198,6 +220,35 @@ describe('ItemDetailPage movement history', () => {
     renderPage();
     const row = await rowShowing('Received');
     expect(within(row).getByText('25')).toBeInTheDocument();
+  });
+});
+
+/**
+ * The half of the story the ledger has never told. A movement explains the
+ * quantity; nothing explained the cost or the reorder point until this section.
+ */
+describe('ItemDetailPage change history', () => {
+  beforeEach(() => stubApi('member'));
+
+  it('shows who changed a cost, and what it was before', async () => {
+    renderPage();
+    expect(await screen.findByText('Change history')).toBeInTheDocument();
+
+    const label = await screen.findByText('Unit cost');
+    const row = label.closest('div');
+    if (!row) throw new Error('no row around the unit cost change');
+    // Stored in cents, read as money — nobody argues about 12000.
+    expect(within(row).getByText('$0.95')).toBeInTheDocument();
+    expect(within(row).getByText('$1.20')).toBeInTheDocument();
+  });
+
+  it('shows a reorder point change, which has never had a home before now', async () => {
+    renderPage();
+    const label = await screen.findByText('Reorder point');
+    const row = label.closest('div');
+    if (!row) throw new Error('no row around the reorder point change');
+    expect(within(row).getByText('4')).toBeInTheDocument();
+    expect(within(row).getByText('10')).toBeInTheDocument();
   });
 });
 

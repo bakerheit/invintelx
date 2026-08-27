@@ -21,9 +21,17 @@ import {
   type SupplierItemDoc,
 } from '../db.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../errors.js';
+import { actorOf } from '../lib/actor.js';
 import { asyncHandler, parseOrThrow } from '../lib/http.js';
 import { requireRole } from '../middleware/auth.js';
 import { toSupplier, toSupplierItem } from '../serializers.js';
+import {
+  auditedDelete,
+  auditedInsert,
+  auditedUpdate,
+  SUPPLIER_AUDIT,
+  SUPPLIER_ITEM_AUDIT,
+} from '../services/audit.js';
 
 export const suppliersRouter: Router = Router();
 
@@ -135,7 +143,7 @@ suppliersRouter.post(
     };
     // A duplicate code surfaces as a 11000 from the unique index and the error
     // middleware turns it into a 409, so no pre-check race window here.
-    await suppliers().insertOne(doc);
+    await auditedInsert(SUPPLIER_AUDIT, doc, actorOf(req));
     res.status(201).json(toSupplier(doc));
   }),
 );
@@ -218,7 +226,7 @@ suppliersRouter.post(
       updatedAt: now,
     };
     try {
-      await supplierItems().insertOne(doc);
+      await auditedInsert(SUPPLIER_ITEM_AUDIT, doc, actorOf(req));
     } catch (error) {
       throw asSupplierItemConflict(error, input.supplierSku);
     }
@@ -237,11 +245,7 @@ suppliersRouter.patch(
 
     let doc: SupplierItemDoc | null;
     try {
-      doc = await supplierItems().findOneAndUpdate(
-        { supplierId, itemId },
-        { $set: { ...input, updatedAt: new Date() } },
-        { returnDocument: 'after' },
-      );
+      doc = await auditedUpdate(SUPPLIER_ITEM_AUDIT, { supplierId, itemId }, input, actorOf(req));
     } catch (error) {
       throw asSupplierItemConflict(error, input.supplierSku ?? '');
     }
@@ -257,6 +261,10 @@ suppliersRouter.patch(
  * Nothing historical points at a supply line: it says where the business can
  * buy something today. A purchase order copies the terms it was raised on, so
  * dropping the line cannot rewrite what was ordered.
+ *
+ * The audit entry keeps the terms it was carrying. This is the only edit in the
+ * product where the record is the sole surviving copy — "we used to buy this at
+ * that price" has nowhere else to live once the row is gone.
  */
 suppliersRouter.delete(
   '/:id/items/:itemId',
@@ -265,7 +273,7 @@ suppliersRouter.delete(
     const supplierId = parseSupplierId(req.params.id);
     const itemId = parseItemId(req.params.itemId);
 
-    const doc = await supplierItems().findOneAndDelete({ supplierId, itemId });
+    const doc = await auditedDelete(SUPPLIER_ITEM_AUDIT, { supplierId, itemId }, actorOf(req));
     if (!doc) throw new NotFoundError('This supplier has no line for that item');
 
     res.status(204).end();
@@ -290,15 +298,16 @@ suppliersRouter.patch(
      * wholesale would replace the object, so a request that changes only the
      * phone number would delete the email address it did not mention.
      */
-    const update: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+    const update: Record<string, unknown> = { ...rest };
     for (const [key, value] of Object.entries(contact ?? {})) {
       if (value !== undefined) update[`contact.${key}`] = value;
     }
 
-    const doc = await suppliers().findOneAndUpdate(
+    const doc = await auditedUpdate(
+      SUPPLIER_AUDIT,
       { _id: parseSupplierId(req.params.id) },
-      { $set: update as MatchKeysAndValues<SupplierDoc> },
-      { returnDocument: 'after' },
+      update as MatchKeysAndValues<SupplierDoc>,
+      actorOf(req),
     );
     if (!doc) throw new NotFoundError('No supplier with that id');
     res.json(toSupplier(doc));
@@ -314,10 +323,12 @@ suppliersRouter.post(
   '/:id/archive',
   requireRole('member'),
   asyncHandler(async (req, res) => {
-    const doc = await suppliers().findOneAndUpdate(
+    const doc = await auditedUpdate(
+      SUPPLIER_AUDIT,
       { _id: parseSupplierId(req.params.id) },
-      { $set: { status: 'archived', updatedAt: new Date() } },
-      { returnDocument: 'after' },
+      { status: 'archived' },
+      actorOf(req),
+      { action: 'archive' },
     );
     if (!doc) throw new NotFoundError('No supplier with that id');
     res.json(toSupplier(doc));
@@ -328,10 +339,12 @@ suppliersRouter.post(
   '/:id/restore',
   requireRole('member'),
   asyncHandler(async (req, res) => {
-    const doc = await suppliers().findOneAndUpdate(
+    const doc = await auditedUpdate(
+      SUPPLIER_AUDIT,
       { _id: parseSupplierId(req.params.id) },
-      { $set: { status: 'active', updatedAt: new Date() } },
-      { returnDocument: 'after' },
+      { status: 'active' },
+      actorOf(req),
+      { action: 'restore' },
     );
     if (!doc) throw new NotFoundError('No supplier with that id');
     res.json(toSupplier(doc));

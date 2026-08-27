@@ -1,6 +1,9 @@
 import { MongoClient, ObjectId, type Collection, type Db } from 'mongodb';
 import type {
   AdjustmentReason,
+  AuditAction,
+  AuditChange,
+  AuditEntityType,
   ItemStatus,
   LocationType,
   MovementType,
@@ -168,6 +171,33 @@ export interface MovementDoc {
 }
 
 /**
+ * One edit that was not a movement.
+ *
+ * Append-only, like the ledger and for the same reason: a record that can be
+ * amended is a record whose contents are an opinion. Nothing in this codebase
+ * updates or deletes one of these, and `services/audit.ts` is the only thing
+ * that writes them.
+ */
+export interface AuditEntryDoc {
+  _id: ObjectId;
+  actorId: ObjectId;
+  /** As it stood at the time. Renaming a user must not rewrite their history. */
+  actorName: string;
+  action: AuditAction;
+  entityType: AuditEntityType;
+  entityId: ObjectId;
+  /** SKU, code, email — whatever names this entity to a person reading the feed. */
+  entityLabel: string;
+  /**
+   * Values are JSON-safe: ids as hex, dates as ISO. Storing them as BSON would
+   * mean the shape of a stored value depended on which field it came from, and
+   * a value here is only ever displayed, never queried on.
+   */
+  changes: AuditChange[];
+  createdAt: Date;
+}
+
+/**
  * Projection of the ledger, never authored directly. rebuildStockLevels
  * recomputes it from movements, which is what makes it verifiable rather than
  * merely trusted.
@@ -223,6 +253,8 @@ export const supplierItems = (): Collection<SupplierItemDoc> =>
 export const movements = (): Collection<MovementDoc> => getDb().collection<MovementDoc>('movements');
 export const stockLevels = (): Collection<StockLevelDoc> =>
   getDb().collection<StockLevelDoc>('stockLevels');
+export const auditEntries = (): Collection<AuditEntryDoc> =>
+  getDb().collection<AuditEntryDoc>('auditEntries');
 export const schemaVersion = (): Collection<SchemaVersionDoc> =>
   getDb().collection<SchemaVersionDoc>('schemaVersion');
 
@@ -292,6 +324,17 @@ export async function ensureIndexes(): Promise<void> {
     { unique: true, name: 'uniq_item_location' },
   );
   await stockLevels().createIndex({ itemId: 1 }, { name: 'by_item' });
+
+  // "What happened to this item" — the trail on a detail page — is one entity's
+  // rows newest first, so the sort has to be part of the index.
+  await auditEntries().createIndex(
+    { entityType: 1, entityId: 1, createdAt: -1 },
+    { name: 'by_entity_created' },
+  );
+  // The admin feed, unfiltered and with each of its filters.
+  await auditEntries().createIndex({ createdAt: -1 }, { name: 'by_created' });
+  await auditEntries().createIndex({ actorId: 1, createdAt: -1 }, { name: 'by_actor_created' });
+  await auditEntries().createIndex({ action: 1, createdAt: -1 }, { name: 'by_action_created' });
 }
 
 interface LedgerTotal {

@@ -20,6 +20,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useAuth } from '@/features/auth/AuthProvider';
+import { AuditTrail } from '@/features/audit/AuditTrail';
 import { ReverseDialog } from '@/features/movements/ReverseDialog';
 import { formatMovementDate } from '@/lib/dates';
 import { cn } from '@/lib/utils';
@@ -262,6 +263,11 @@ export function ItemDetailPage() {
           </div>
         )}
       </section>
+
+      {/* The other half of the story. Movements above account for the quantity;
+          this accounts for the cost, the reorder point and the status — the
+          fields somebody disputes when the month closes badly. */}
+      <AuditTrail entityType="item" entityId={id} />
 
       <ItemDialog open={editing} onOpenChange={setEditing} item={item.data} />
       <ReverseDialog

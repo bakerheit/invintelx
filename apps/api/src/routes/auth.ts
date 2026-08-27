@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { ObjectId } from 'mongodb';
 import { loginInputSchema, registerInputSchema } from '@invintelx/shared';
-import { sessions, users } from '../db.js';
+import { sessions, users, type UserDoc } from '../db.js';
 import { isTest } from '../env.js';
 import { ConflictError, ForbiddenError, UnauthorizedError } from '../errors.js';
 import { asyncHandler, parseOrThrow } from '../lib/http.js';
@@ -18,6 +18,7 @@ import {
 } from '../lib/session.js';
 import { requireAuth } from '../middleware/auth.js';
 import { toPublicUser } from '../serializers.js';
+import { auditedInsert, USER_AUDIT } from '../services/audit.js';
 
 export const authRouter: Router = Router();
 
@@ -91,7 +92,7 @@ authRouter.post(
 
     const now = new Date();
 
-    const doc = {
+    const doc: UserDoc = {
       _id: new ObjectId(),
       email: input.email,
       name: input.name,
@@ -100,7 +101,16 @@ authRouter.post(
       createdAt: now,
       updatedAt: now,
     };
-    await users().insertOne(doc);
+    /*
+     * Audited, and the actor is the account itself: nobody else exists to
+     * attribute a self-registration to. What matters here is the role — an
+     * instance's first account is its administrator, and "who made this person
+     * an admin" being answerable from the first row is the point.
+     *
+     * The password hash is on the redaction list, so the entry records that the
+     * field was set and nothing about what it was set to.
+     */
+    await auditedInsert(USER_AUDIT, doc, { actorId: doc._id, actorName: doc.name });
 
     const { token, expiresAt } = await startSession(doc._id);
     setSessionCookie(res, token, expiresAt);
