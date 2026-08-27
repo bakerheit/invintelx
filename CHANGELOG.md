@@ -74,6 +74,18 @@ this release is on the only shape the data has ever had.
   non-zero if they disagree — which is what a dump taken without a consistent
   snapshot leaves behind. `pnpm db:rebuild` does that, recomputes, and checks
   again. See [docs/backup-and-restore.md](docs/backup-and-restore.md).
+- `MONGODB_DB` must be set explicitly when `NODE_ENV=production`, instead of
+  defaulting to `invintelx`. Production and staging are expected to share a
+  hosted cluster and be told apart by database name alone, so a default that
+  applied in production is a staging deploy quietly writing to production's
+  collections. The boot now stops with a message that says so.
+  `MONGODB_URI` must also be a real `mongodb://` or `mongodb+srv://` connection
+  string rather than a bare hostname.
+- [docs/atlas.md](docs/atlas.md) — how the hosted instance's database is
+  configured: one cluster with a database per environment, a `readWrite` user
+  scoped to one database each, an IP allowlist that is not `0.0.0.0/0`, and
+  provider snapshots that are only a backup once `pnpm db:verify` has been run
+  against a restore of one. The cluster does not exist yet; the page says so.
 - Licensed AGPL-3.0-or-later, with the section 13 source offer the licence
   requires wired into the running app via `VITE_SOURCE_URL`. Point it at your
   own source if you modify InvIntelX and serve it to other people.
