@@ -134,6 +134,10 @@ function buildLedger(
       note: '',
       groupId: null,
       reversesId: null,
+      // The demo history predates any purchase order, so these receipts stand on
+      // their own the way a pre-INVX-27 ledger row does.
+      purchaseOrderId: null,
+      purchaseOrderLineId: null,
       reason: null,
       occurredAt,
       actorId,

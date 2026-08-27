@@ -86,6 +86,16 @@ export const movementSchema = z.object({
   groupId: objectIdSchema.nullable(),
   /** Set when this row exists to compensate an earlier one. */
   reversesId: objectIdSchema.nullable(),
+  /**
+   * Set when this row was posted against a purchase order line.
+   *
+   * `reference` above can carry the order number for a person to read, but a
+   * string is not something you can join on. These two are: they are what makes
+   * "which receipts satisfied this line" and "how long did this supplier
+   * actually take" queries rather than transcription.
+   */
+  purchaseOrderId: objectIdSchema.nullable(),
+  purchaseOrderLineId: objectIdSchema.nullable(),
   /** Only meaningful on an adjustment. */
   reason: adjustmentReasonSchema.nullable(),
   occurredAt: isoDateSchema,

@@ -24,6 +24,8 @@ function movement(overrides: Record<string, unknown>) {
     note: '',
     groupId: null,
     reversesId: null,
+    purchaseOrderId: null,
+    purchaseOrderLineId: null,
     reason: null,
     occurredAt: '2026-08-20T09:00:00.000Z',
     actorId: ACTOR_ID,

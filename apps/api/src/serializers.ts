@@ -1,5 +1,23 @@
-import type { Item, Location, Movement, PublicUser, StockLevel } from '@invintelx/shared';
-import type { ItemDoc, LocationDoc, MovementDoc, StockLevelDoc, UserDoc } from './db.js';
+import {
+  outstandingQuantity,
+  purchaseOrderTotalCents,
+  type Item,
+  type Location,
+  type Movement,
+  type PublicUser,
+  type PurchaseOrder,
+  type PurchaseOrderLine,
+  type StockLevel,
+} from '@invintelx/shared';
+import type {
+  ItemDoc,
+  LocationDoc,
+  MovementDoc,
+  PurchaseOrderDoc,
+  PurchaseOrderLineDoc,
+  StockLevelDoc,
+  UserDoc,
+} from './db.js';
 
 /**
  * Documents never go to the client directly. Going through an explicit mapper
@@ -65,11 +83,61 @@ export function toMovement(doc: MovementDoc): Movement {
     note: doc.note,
     groupId: doc.groupId ? doc.groupId.toHexString() : null,
     reversesId: doc.reversesId ? doc.reversesId.toHexString() : null,
+    /*
+     * `?? null` rather than a direct read: movements written before purchase
+     * orders existed have no such field at all, and a missing field must read as
+     * "not against an order" rather than fail the response schema. That is also
+     * why this pair needed no migration.
+     */
+    purchaseOrderId: doc.purchaseOrderId ? doc.purchaseOrderId.toHexString() : null,
+    purchaseOrderLineId: doc.purchaseOrderLineId ? doc.purchaseOrderLineId.toHexString() : null,
     reason: doc.reason ?? null,
     occurredAt: doc.occurredAt.toISOString(),
     actorId: doc.actorId.toHexString(),
     actorName: doc.actorName,
     createdAt: doc.createdAt.toISOString(),
+  };
+}
+
+/**
+ * Outstanding and the two totals are computed here rather than stored.
+ *
+ * They are functions of quantities that are already on the document, so storing
+ * them would create a second place for the same fact to live and a second way
+ * for it to be wrong — the same reason on-hand is projected from the ledger
+ * rather than written alongside it.
+ */
+export function toPurchaseOrderLine(line: PurchaseOrderLineDoc): PurchaseOrderLine {
+  return {
+    id: line._id.toHexString(),
+    itemId: line.itemId.toHexString(),
+    itemSku: line.itemSku,
+    itemName: line.itemName,
+    quantityOrdered: line.quantityOrdered,
+    quantityReceived: line.quantityReceived,
+    quantityOutstanding: outstandingQuantity(line),
+    unitCostCents: line.unitCostCents,
+    lineTotalCents: line.quantityOrdered * line.unitCostCents,
+  };
+}
+
+export function toPurchaseOrder(doc: PurchaseOrderDoc): PurchaseOrder {
+  return {
+    id: doc._id.toHexString(),
+    number: doc.number,
+    supplierId: doc.supplierId.toHexString(),
+    supplierCode: doc.supplierCode,
+    supplierName: doc.supplierName,
+    status: doc.status,
+    expectedDate: doc.expectedDate ? doc.expectedDate.toISOString() : null,
+    reference: doc.reference,
+    note: doc.note,
+    lines: doc.lines.map(toPurchaseOrderLine),
+    totalCents: purchaseOrderTotalCents(doc.lines),
+    sentAt: doc.sentAt ? doc.sentAt.toISOString() : null,
+    closedAt: doc.closedAt ? doc.closedAt.toISOString() : null,
+    createdAt: doc.createdAt.toISOString(),
+    updatedAt: doc.updatedAt.toISOString(),
   };
 }
 

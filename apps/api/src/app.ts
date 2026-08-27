@@ -8,6 +8,7 @@ import { authRouter } from './routes/auth.js';
 import { itemsRouter } from './routes/items.js';
 import { locationsRouter } from './routes/locations.js';
 import { movementsRouter } from './routes/movements.js';
+import { purchaseOrdersRouter } from './routes/purchaseOrders.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { webAssets } from './web.js';
 import { VERSION } from './version.js';
@@ -92,6 +93,7 @@ export function createApp(): Express {
   app.use('/api/items', requireAuth, itemsRouter);
   app.use('/api/locations', requireAuth, locationsRouter);
   app.use('/api/movements', requireAuth, movementsRouter);
+  app.use('/api/purchase-orders', requireAuth, purchaseOrdersRouter);
   app.use('/api/analytics', requireAuth, analyticsRouter);
 
   // Last chance before the 404: a client-side route that survives a refresh.

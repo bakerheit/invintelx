@@ -4,6 +4,7 @@ import type {
   ItemStatus,
   LocationType,
   MovementType,
+  PurchaseOrderStatus,
   Role,
   UnitOfMeasure,
 } from '@invintelx/shared';
@@ -106,6 +107,56 @@ export interface LocationDoc {
   updatedAt: Date;
 }
 
+/**
+ * One line of a purchase order. Lines live inside the order rather than in their
+ * own collection: an order has tens of lines and is always read whole, and
+ * receiving a delivery has to change several lines and the order's status
+ * together — which is one document write here, and a multi-document dance
+ * anywhere else.
+ */
+export interface PurchaseOrderLineDoc {
+  _id: ObjectId;
+  itemId: ObjectId;
+  /** Copied when the line is written. See the schema for why it is not resolved. */
+  itemSku: string;
+  itemName: string;
+  quantityOrdered: number;
+  /** Raised by a receipt, lowered by reversing one. May exceed ordered. */
+  quantityReceived: number;
+  unitCostCents: number;
+}
+
+export interface PurchaseOrderDoc {
+  _id: ObjectId;
+  number: string;
+  supplierId: ObjectId;
+  /** Copied at creation, for the same reason a line copies its item's SKU. */
+  supplierCode: string;
+  supplierName: string;
+  status: PurchaseOrderStatus;
+  expectedDate: Date | null;
+  reference: string;
+  note: string;
+  lines: PurchaseOrderLineDoc[];
+  sentAt: Date | null;
+  closedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * A named monotonic sequence. `$inc` with an upsert is the entire mechanism:
+ * it is atomic, so two orders created at the same instant cannot take the same
+ * number. Gaps are expected and harmless — a number handed out to a request that
+ * then failed is spent, and reusing it would be worse than skipping it.
+ */
+export interface CounterDoc {
+  _id: string;
+  seq: number;
+}
+
+export const PURCHASE_ORDER_NUMBER_COUNTER = 'purchaseOrderNumber';
+
 export interface MovementDoc {
   _id: ObjectId;
   itemId: ObjectId;
@@ -122,6 +173,14 @@ export interface MovementDoc {
   groupId: ObjectId | null;
   /** Set when this row compensates an earlier one. */
   reversesId: ObjectId | null;
+  /**
+   * Set when this row was posted against a purchase order line. Both are kept:
+   * the line id identifies what was satisfied, and the order id makes "every
+   * receipt against this order" one indexed query instead of an `$in` over its
+   * line ids.
+   */
+  purchaseOrderId: ObjectId | null;
+  purchaseOrderLineId: ObjectId | null;
   /** Only meaningful on an adjustment. */
   reason: AdjustmentReason | null;
   /** When the stock actually moved, which is not always when it was recorded. */
@@ -182,6 +241,9 @@ export const setupTokens = (): Collection<SetupTokenDoc> =>
 export const items = (): Collection<ItemDoc> => getDb().collection<ItemDoc>('items');
 export const locations = (): Collection<LocationDoc> => getDb().collection<LocationDoc>('locations');
 export const movements = (): Collection<MovementDoc> => getDb().collection<MovementDoc>('movements');
+export const purchaseOrders = (): Collection<PurchaseOrderDoc> =>
+  getDb().collection<PurchaseOrderDoc>('purchaseOrders');
+export const counters = (): Collection<CounterDoc> => getDb().collection<CounterDoc>('counters');
 export const stockLevels = (): Collection<StockLevelDoc> =>
   getDb().collection<StockLevelDoc>('stockLevels');
 export const schemaVersion = (): Collection<SchemaVersionDoc> =>
@@ -220,6 +282,28 @@ export async function ensureIndexes(): Promise<void> {
   // Sparse: only transfers carry a group, and only reversals carry a target.
   await movements().createIndex({ groupId: 1 }, { name: 'by_group', sparse: true });
   await movements().createIndex({ reversesId: 1 }, { name: 'by_reverses', sparse: true });
+  /*
+   * Partial rather than sparse. Every movement carries `purchaseOrderId`, null
+   * when it was not posted against an order, and a sparse index skips only
+   * documents where the field is *missing* — a null is indexed like any other
+   * value. Filtering on the type is what actually keeps this index the size of
+   * the receipts against purchase orders rather than the size of the ledger.
+   */
+  await movements().createIndex(
+    { purchaseOrderId: 1, occurredAt: -1 },
+    {
+      name: 'by_purchase_order_occurred',
+      partialFilterExpression: { purchaseOrderId: { $type: 'objectId' } },
+    },
+  );
+
+  await purchaseOrders().createIndex({ number: 1 }, { unique: true, name: 'uniq_number' });
+  await purchaseOrders().createIndex({ supplierId: 1, status: 1 }, { name: 'by_supplier_status' });
+  // "What is late" and "what is due this week" both read this.
+  await purchaseOrders().createIndex({ status: 1, expectedDate: 1 }, { name: 'by_status_expected' });
+  // "How much of this SKU is already on the way" reaches into the lines.
+  await purchaseOrders().createIndex({ 'lines.itemId': 1 }, { name: 'by_line_item' });
+  await purchaseOrders().createIndex({ 'lines._id': 1 }, { name: 'by_line' });
 
   await stockLevels().createIndex(
     { itemId: 1, locationId: 1 },

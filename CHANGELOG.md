@@ -41,6 +41,15 @@ this release is on the only shape the data has ever had.
 - An append-only `StockMovement` ledger with on-hand quantity as a projection
   derived from it. Receive, issue, transfer, adjust and reversal, with a screen
   to move stock.
+- Purchase orders: supplier, expected date, lines of item, quantity and agreed
+  price, and a `draft -> sent -> partial -> received` lifecycle with `cancelled`
+  available until an order completes. Receiving names the lines that actually
+  turned up and the quantities that turned up, so a short shipment is the
+  ordinary path rather than a special case; each line received writes a receipt
+  movement carrying the order and line it satisfied, and the order's status is
+  re-derived from its lines. Reversing one of those receipts takes the quantity
+  back off the line in the same transaction, which can reopen a completed order.
+  API only — `/api/purchase-orders` — with no screen yet.
 - Analytics over the ledger: demand series, days of cover, reorder suggestions
   and an action list of the items that need attention today.
 - A deliberate act between deploying an instance and it having an

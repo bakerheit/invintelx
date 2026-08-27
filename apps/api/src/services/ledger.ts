@@ -17,6 +17,7 @@ import {
   type MovementDoc,
 } from '../db.js';
 import { BadRequestError, NotFoundError } from '../errors.js';
+import { applyReceivedDeltas } from './purchaseOrderLines.js';
 
 export interface Actor {
   actorId: ObjectId;
@@ -34,7 +35,15 @@ export interface PostMovementInput extends Actor {
   occurredAt: Date;
   groupId?: ObjectId | null;
   reversesId?: ObjectId | null;
+  /** Set together, or not at all: a line id without its order is half a link. */
+  purchaseOrderId?: ObjectId | null;
+  purchaseOrderLineId?: ObjectId | null;
   reason?: AdjustmentReason | null;
+}
+
+export interface PostedMovement {
+  movement: MovementDoc;
+  balanceAfter: number;
 }
 
 /**
@@ -94,6 +103,8 @@ function buildDoc(
     note: input.note,
     groupId: input.groupId ?? null,
     reversesId: input.reversesId ?? null,
+    purchaseOrderId: input.purchaseOrderId ?? null,
+    purchaseOrderLineId: input.purchaseOrderLineId ?? null,
     reason: input.reason ?? null,
     occurredAt: input.occurredAt,
     actorId: input.actorId,
@@ -134,26 +145,64 @@ function rejectZero(quantity: number): void {
   }
 }
 
-export async function postMovement(
-  input: PostMovementInput,
-): Promise<{ movement: MovementDoc; balanceAfter: number }> {
-  rejectZero(input.quantity);
-  const { item, location } = await resolveTarget(input.itemId, input.locationId);
+/**
+ * Append one or more movements as a single unit of work.
+ *
+ * A delivery is why this takes a list. Three lines off one purchase order
+ * arriving on one van are three ledger rows and one change to that order, and a
+ * failure halfway through would leave the order claiming stock the ledger never
+ * took — or the reverse. Every target is resolved before the transaction opens,
+ * for the same reason a transfer validates both of its ends first: refusing part
+ * way through would leave the earlier rows standing.
+ *
+ * `alsoInTransaction` runs after the rows are written and before the commit. It
+ * exists so that the documents a movement is *about* — today, a purchase order
+ * line — can be moved in the same breath as the ledger, without this module
+ * having to know what any of them are.
+ */
+export async function postMovements(
+  inputs: readonly PostMovementInput[],
+  alsoInTransaction?: (session: ClientSession, now: Date) => Promise<void>,
+): Promise<PostedMovement[]> {
+  if (inputs.length === 0) {
+    throw new BadRequestError('Nothing to post', { _: 'No movements supplied' });
+  }
+  for (const input of inputs) rejectZero(input.quantity);
+
+  const targets = await Promise.all(
+    inputs.map((input) => resolveTarget(input.itemId, input.locationId)),
+  );
 
   const now = new Date();
-  const doc = buildDoc(input, item, location, now);
+  const docs = inputs.map((input, index) => {
+    const target = targets[index];
+    if (!target) throw new NotFoundError('No item with that id');
+    return buildDoc(input, target.item, target.location, now);
+  });
 
-  let balanceAfter = 0;
+  const balances: number[] = [];
   const session = getClient().startSession();
   try {
     await session.withTransaction(async () => {
-      balanceAfter = await writeInSession(doc, session, now);
+      // withTransaction retries on a transient conflict, so this has to start
+      // empty each attempt rather than accumulate one balance per try.
+      balances.length = 0;
+      for (const doc of docs) {
+        balances.push(await writeInSession(doc, session, now));
+      }
+      if (alsoInTransaction) await alsoInTransaction(session, now);
     });
   } finally {
     await session.endSession();
   }
 
-  return { movement: doc, balanceAfter };
+  return docs.map((movement, index) => ({ movement, balanceAfter: balances[index] ?? 0 }));
+}
+
+export async function postMovement(input: PostMovementInput): Promise<PostedMovement> {
+  const [posted] = await postMovements([input]);
+  if (!posted) throw new Error('postMovements returned nothing for a single input');
+  return posted;
 }
 
 /**
@@ -236,7 +285,7 @@ export async function postReversal(
   movementId: ObjectId,
   note: string,
   actor: Actor,
-): Promise<{ movement: MovementDoc; balanceAfter: number }> {
+): Promise<PostedMovement> {
   const original = await movements().findOne({ _id: movementId });
   if (!original) throw new NotFoundError('No movement with that id');
 
@@ -244,19 +293,52 @@ export async function postReversal(
     throw new BadRequestError(TRANSFER_REVERSAL_MESSAGE, { type: 'Cannot reverse a transfer' });
   }
 
-  return postMovement({
-    itemId: original.itemId,
-    locationId: original.locationId,
-    // The opposite of what happened, so the pair sums to zero.
-    quantity: -original.quantity,
-    type: original.type,
-    reference: original.reference,
-    note,
-    occurredAt: new Date(),
-    reversesId: original._id,
-    reason: original.reason,
-    ...actor,
-  });
+  /*
+   * Undoing a receipt that satisfied a purchase order line has to take that
+   * quantity back off the line, in the same transaction as the compensating row.
+   * Otherwise the order goes on saying ten arrived while the ledger holds ten
+   * and minus ten, and "what is still owed" quietly stops being true.
+   *
+   * The compensating row keeps the link, so the pair can be found from the order
+   * as readily as the original was.
+   */
+  const line =
+    original.purchaseOrderId && original.purchaseOrderLineId
+      ? { orderId: original.purchaseOrderId, lineId: original.purchaseOrderLineId }
+      : null;
+
+  const [posted] = await postMovements(
+    [
+      {
+        itemId: original.itemId,
+        locationId: original.locationId,
+        // The opposite of what happened, so the pair sums to zero.
+        quantity: -original.quantity,
+        type: original.type,
+        reference: original.reference,
+        note,
+        occurredAt: new Date(),
+        reversesId: original._id,
+        purchaseOrderId: original.purchaseOrderId,
+        purchaseOrderLineId: original.purchaseOrderLineId,
+        reason: original.reason,
+        ...actor,
+      },
+    ],
+    line
+      ? async (session, now) => {
+          await applyReceivedDeltas(
+            line.orderId,
+            [{ lineId: line.lineId, quantity: -original.quantity }],
+            session,
+            now,
+          );
+        }
+      : undefined,
+  );
+
+  if (!posted) throw new Error('postMovements returned nothing for a reversal');
+  return posted;
 }
 
 /**
