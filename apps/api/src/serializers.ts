@@ -1,13 +1,20 @@
-import type {
-  Item,
-  Location,
-  Movement,
-  PublicUser,
-  StockLevel,
-  Supplier,
-  SupplierItem,
+import {
+  lineVariance,
+  summariseCountSheet,
+  type CountSheet,
+  type CountSheetDetail,
+  type CountSheetLine,
+  type Item,
+  type Location,
+  type Movement,
+  type PublicUser,
+  type StockLevel,
+  type Supplier,
+  type SupplierItem,
 } from '@invintelx/shared';
 import type {
+  CountSheetDoc,
+  CountSheetLineDoc,
   ItemDoc,
   LocationDoc,
   MovementDoc,
@@ -126,6 +133,49 @@ export function toMovement(doc: MovementDoc): Movement {
     actorName: doc.actorName,
     createdAt: doc.createdAt.toISOString(),
   };
+}
+
+export function toCountSheetLine(doc: CountSheetLineDoc): CountSheetLine {
+  return {
+    id: doc._id.toHexString(),
+    itemId: doc.itemId.toHexString(),
+    itemSku: doc.itemSku,
+    itemName: doc.itemName,
+    expectedQuantity: doc.expectedQuantity,
+    countedQuantity: doc.countedQuantity,
+    // Sent rather than left to the client to work out, so the number on the
+    // screen and the number the adjustment was written from are the same one.
+    variance: lineVariance(doc),
+    countedAt: doc.countedAt ? doc.countedAt.toISOString() : null,
+    countedByName: doc.countedByName,
+    postedMovementId: doc.postedMovementId ? doc.postedMovementId.toHexString() : null,
+    postedQuantity: doc.postedQuantity,
+  };
+}
+
+/** The sheet without its lines: what a list of sheets needs and no more. */
+export function toCountSheet(doc: CountSheetDoc): CountSheet {
+  return {
+    id: doc._id.toHexString(),
+    reference: doc.reference,
+    locationId: doc.locationId.toHexString(),
+    locationCode: doc.locationCode,
+    locationPathLabel: doc.locationPathLabel,
+    scope: doc.scope,
+    status: doc.status,
+    note: doc.note,
+    summary: summariseCountSheet(doc.lines),
+    createdAt: doc.createdAt.toISOString(),
+    updatedAt: doc.updatedAt.toISOString(),
+    createdByName: doc.createdByName,
+    postedAt: doc.postedAt ? doc.postedAt.toISOString() : null,
+    postedByName: doc.postedByName,
+    cancelledAt: doc.cancelledAt ? doc.cancelledAt.toISOString() : null,
+  };
+}
+
+export function toCountSheetDetail(doc: CountSheetDoc): CountSheetDetail {
+  return { ...toCountSheet(doc), lines: doc.lines.map(toCountSheetLine) };
 }
 
 export function toStockLevel(doc: StockLevelDoc): StockLevel {

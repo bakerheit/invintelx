@@ -1,6 +1,8 @@
 import { MongoClient, ObjectId, type Collection, type Db } from 'mongodb';
 import type {
   AdjustmentReason,
+  CountSheetScope,
+  CountSheetStatus,
   ItemStatus,
   LocationType,
   MovementType,
@@ -168,6 +170,56 @@ export interface MovementDoc {
 }
 
 /**
+ * One SKU on a count sheet: what the books said, what somebody found, and the
+ * adjustment that difference produced once it was accepted.
+ */
+export interface CountSheetLineDoc {
+  _id: ObjectId;
+  itemId: ObjectId;
+  itemSku: string;
+  itemName: string;
+  /** On-hand at this bin when the sheet was cut. Frozen from that moment on. */
+  expectedQuantity: number;
+  /** Null until counted. Zero is a count; null is the absence of one. */
+  countedQuantity: number | null;
+  countedAt: Date | null;
+  countedById: ObjectId | null;
+  countedByName: string;
+  /** The adjustment written for this line's variance, once accepted. */
+  postedMovementId: ObjectId | null;
+  postedQuantity: number | null;
+}
+
+/**
+ * A cycle count in progress or closed.
+ *
+ * Lines are embedded rather than a collection of their own, so that accepting a
+ * page of variances is one atomic write against one document alongside the
+ * movements it produces. The ceiling on line count exists to keep that true —
+ * see MAX_COUNT_SHEET_LINES.
+ */
+export interface CountSheetDoc {
+  _id: ObjectId;
+  /** Short and sayable, e.g. "CC-4F2A91C3". Unique, so it can be quoted. */
+  reference: string;
+  locationId: ObjectId;
+  locationCode: string;
+  locationPathLabel: string;
+  scope: CountSheetScope;
+  status: CountSheetStatus;
+  note: string;
+  lines: CountSheetLineDoc[];
+  createdAt: Date;
+  updatedAt: Date;
+  createdById: ObjectId;
+  createdByName: string;
+  postedAt: Date | null;
+  postedById: ObjectId | null;
+  postedByName: string;
+  cancelledAt: Date | null;
+}
+
+/**
  * Projection of the ledger, never authored directly. rebuildStockLevels
  * recomputes it from movements, which is what makes it verifiable rather than
  * merely trusted.
@@ -223,6 +275,8 @@ export const supplierItems = (): Collection<SupplierItemDoc> =>
 export const movements = (): Collection<MovementDoc> => getDb().collection<MovementDoc>('movements');
 export const stockLevels = (): Collection<StockLevelDoc> =>
   getDb().collection<StockLevelDoc>('stockLevels');
+export const countSheets = (): Collection<CountSheetDoc> =>
+  getDb().collection<CountSheetDoc>('countSheets');
 export const schemaVersion = (): Collection<SchemaVersionDoc> =>
   getDb().collection<SchemaVersionDoc>('schemaVersion');
 
@@ -292,6 +346,14 @@ export async function ensureIndexes(): Promise<void> {
     { unique: true, name: 'uniq_item_location' },
   );
   await stockLevels().createIndex({ itemId: 1 }, { name: 'by_item' });
+
+  // The reference is what somebody writes at the top of a paper sheet and reads
+  // back over a radio, so two sheets must never share one. Creation retries on a
+  // collision rather than hoping - see openCountSheet.
+  await countSheets().createIndex({ reference: 1 }, { unique: true, name: 'uniq_reference' });
+  // "What is open right now" is the counting screen's only question.
+  await countSheets().createIndex({ status: 1, createdAt: -1 }, { name: 'by_status_created' });
+  await countSheets().createIndex({ locationId: 1, createdAt: -1 }, { name: 'by_location_created' });
 }
 
 interface LedgerTotal {

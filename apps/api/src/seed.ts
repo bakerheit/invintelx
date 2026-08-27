@@ -9,6 +9,7 @@ import type { PaymentTerms, PriceBreak, SupplierContact, UnitOfMeasure } from '@
 import { env } from './env.js';
 import {
   connect,
+  countSheets,
   disconnect,
   ensureIndexes,
   items,
@@ -314,6 +315,9 @@ async function main(): Promise<void> {
     stockLevels().deleteMany({}),
     suppliers().deleteMany({}),
     supplierItems().deleteMany({}),
+    // Sheets point at items and bins by id. Leaving them behind a wipe would
+    // leave a count sheet quoting SKUs that no longer exist.
+    countSheets().deleteMany({}),
   ]);
 
   const now = new Date();

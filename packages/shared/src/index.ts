@@ -6,5 +6,6 @@ export * from './csv.js';
 export * from './itemCsv.js';
 export * from './location.js';
 export * from './movement.js';
+export * from './count.js';
 export * from './supplier.js';
 export * from './analytics.js';

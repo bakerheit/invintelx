@@ -41,6 +41,18 @@ this release is on the only shape the data has ever had.
 - An append-only `StockMovement` ledger with on-hand quantity as a projection
   derived from it. Receive, issue, transfer, adjust and reversal, with a screen
   to move stock.
+- Cycle counts. Open a sheet for a bin — or for named items in one, including
+  items the records say are not there — record what was found, and read the
+  variance against what the books expected. Accepting a variance posts it as an
+  `adjustment` movement with reason `miscount`, carrying the sheet's reference,
+  so a correction can always be traced back to the count that caused it. What is
+  posted is the **difference**, not the count: anything that moved between
+  cutting the sheet and accepting it stays on the books rather than being
+  silently overwritten. `GET/POST /api/counts`, `GET /api/counts/:id`,
+  `PATCH /api/counts/:id/lines/:lineId`, `POST /api/counts/:id/post` and
+  `POST /api/counts/:id/cancel`, with a screen at `/counts`. Adds a
+  `countSheets` collection — dump it, because nothing else records what was
+  expected, what was found and who signed it off.
 - Suppliers: model and REST API, with contact details, payment terms and the
   lead time the supplier *promises*. That number is stored on its own and is
   never written back from observed receipts, so the analytics epic can show the

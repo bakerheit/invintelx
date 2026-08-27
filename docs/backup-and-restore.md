@@ -18,6 +18,7 @@ keeping a copy of it and — the part that actually matters — being able to pr
 | `items`, `locations` | Gone forever. Re-enterable by hand, at a cost you will not enjoy. |
 | `users` | Gone forever, and with it every account. |
 | `stockLevels` | Recomputable from `movements` — but dump it anyway, see below. |
+| `countSheets` | Gone forever. The adjustments a count produced survive in `movements`; what nobody can recompute is what was expected, what was found, and who signed it off. |
 | `schemaVersion` | Recomputable only by guessing. Restore it or the next boot re-runs migrations against a database that has already had them. |
 | `sessions` | Disposable. Losing it signs everybody out; the TTL index deletes them anyway. |
 | `setupTokens` | Disposable, and short-lived by design. |
@@ -133,7 +134,7 @@ many writes you made in between.)
 
 ```bash
 docker compose exec -T mongo mongosh invintelx --quiet --eval '
-  ["movements","items","locations","users","stockLevels"].forEach(c =>
+  ["movements","items","locations","users","stockLevels","countSheets"].forEach(c =>
     print(c.padEnd(12), db.getCollection(c).countDocuments({})))'
 ```
 

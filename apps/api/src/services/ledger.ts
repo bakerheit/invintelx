@@ -38,6 +38,35 @@ export interface PostMovementInput extends Actor {
 }
 
 /**
+ * Whether a location may hold stock at all.
+ *
+ * Split out from `resolveTarget` because a cycle count picks a bin before it
+ * knows a single item, and the bin has to be judged by exactly the same rules
+ * the eventual adjustments will be judged by — otherwise a sheet can be opened
+ * against a bin whose every variance would then be refused.
+ */
+export function assertStockLocation(location: LocationDoc, label = 'location'): void {
+  if (!location.isActive) {
+    throw new BadRequestError(`That ${label} is inactive`, { [`${label}Id`]: 'Location is inactive' });
+  }
+  // Only leaves hold stock. Letting a zone hold stock as well as its bins would
+  // give "how much is in this warehouse" two defensible answers.
+  if (!holdsStock(location.type)) {
+    throw new BadRequestError(`Stock is held in bins, not in a ${location.type}`, {
+      [`${label}Id`]: 'Pick a bin',
+    });
+  }
+}
+
+function assertStockItem(item: ItemDoc): void {
+  if (item.status !== 'active') {
+    throw new BadRequestError('That item is archived, so stock cannot move against it', {
+      itemId: 'Item is archived',
+    });
+  }
+}
+
+/**
  * Validate that stock may move for this item at this location.
  *
  * Separate from writing so a transfer can check both of its ends before either
@@ -56,21 +85,8 @@ async function resolveTarget(
   if (!item) throw new NotFoundError('No item with that id');
   if (!location) throw new NotFoundError(`No ${label} with that id`);
 
-  if (item.status !== 'active') {
-    throw new BadRequestError('That item is archived, so stock cannot move against it', {
-      itemId: 'Item is archived',
-    });
-  }
-  if (!location.isActive) {
-    throw new BadRequestError(`That ${label} is inactive`, { [`${label}Id`]: 'Location is inactive' });
-  }
-  // Only leaves hold stock. Letting a zone hold stock as well as its bins would
-  // give "how much is in this warehouse" two defensible answers.
-  if (!holdsStock(location.type)) {
-    throw new BadRequestError(`Stock is held in bins, not in a ${location.type}`, {
-      [`${label}Id`]: 'Pick a bin',
-    });
-  }
+  assertStockItem(item);
+  assertStockLocation(location, label);
 
   return { item, location };
 }
@@ -154,6 +170,76 @@ export async function postMovement(
   }
 
   return { movement: doc, balanceAfter };
+}
+
+/**
+ * Validate a batch of movements and build every row, writing nothing.
+ *
+ * The same "check everything before writing anything" rule a transfer follows,
+ * widened to a whole count sheet: a sheet of thirty accepted variances that
+ * refuses on the twenty-ninth must leave the ledger exactly as it found it, and
+ * the only way to be sure of that is to have written none of them yet. The
+ * lookups are batched because a count sheet is one bin and many items, and
+ * resolving each line on its own would be two queries per line.
+ *
+ * The ids are minted here, so a caller can record what it is about to write
+ * against something else in the same transaction.
+ */
+export async function prepareMovements(
+  inputs: PostMovementInput[],
+  now: Date,
+): Promise<MovementDoc[]> {
+  if (inputs.length === 0) return [];
+  for (const input of inputs) rejectZero(input.quantity);
+
+  const itemIds = [...new Map(inputs.map((i) => [i.itemId.toHexString(), i.itemId])).values()];
+  const locationIds = [
+    ...new Map(inputs.map((i) => [i.locationId.toHexString(), i.locationId])).values(),
+  ];
+
+  const [itemDocs, locationDocs] = await Promise.all([
+    items()
+      .find({ _id: { $in: itemIds } })
+      .toArray(),
+    locations()
+      .find({ _id: { $in: locationIds } })
+      .toArray(),
+  ]);
+
+  const itemsById = new Map(itemDocs.map((doc) => [doc._id.toHexString(), doc]));
+  const locationsById = new Map(locationDocs.map((doc) => [doc._id.toHexString(), doc]));
+
+  return inputs.map((input) => {
+    const item = itemsById.get(input.itemId.toHexString());
+    if (!item) throw new NotFoundError('No item with that id');
+    const location = locationsById.get(input.locationId.toHexString());
+    if (!location) throw new NotFoundError('No location with that id');
+
+    assertStockItem(item);
+    assertStockLocation(location);
+
+    return buildDoc(input, item, location, now);
+  });
+}
+
+/**
+ * Append prepared movements inside a caller's transaction, in order.
+ *
+ * Exposed so that a write which has to be atomic with something outside the
+ * ledger — accepting a count sheet, which must never be able to post twice —
+ * can put both in one unit of work. Returns each row's balance after, in the
+ * order the rows were given.
+ */
+export async function writeMovements(
+  docs: MovementDoc[],
+  session: ClientSession,
+  now: Date,
+): Promise<number[]> {
+  const balances: number[] = [];
+  for (const doc of docs) {
+    balances.push(await writeInSession(doc, session, now));
+  }
+  return balances;
 }
 
 /**

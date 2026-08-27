@@ -33,4 +33,16 @@ export const queryKeys = {
     all: ['movements'] as const,
     list: (query: Record<string, unknown>) => ['movements', 'list', query] as const,
   },
+  counts: {
+    all: ['counts'] as const,
+    /**
+     * The prefix every list shares, so "the lists are stale" can be said
+     * without also invalidating the sheet a mutation just handed back in full.
+     * `list({})` is not that prefix — a query object in the key is matched by
+     * value, so it would only ever match a list with no filters at all.
+     */
+    lists: ['counts', 'list'] as const,
+    list: (query: Record<string, unknown>) => ['counts', 'list', query] as const,
+    detail: (id: string) => ['counts', 'detail', id] as const,
+  },
 } as const;
