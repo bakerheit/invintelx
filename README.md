@@ -3,13 +3,29 @@
 Open source inventory intelligence. Track SKUs, stock and movements, and get told
 which items actually need attention today.
 
-The hosted instance is [invintelx.org](https://invintelx.org).
+**[invintelx.org](https://invintelx.org) is the only supported deployment.** It
+is the instance this project runs, it is what gets exercised every day, and it
+is the one a bug report can be filed against and expected to go somewhere.
 
-**You may run your own.** The AGPL grants you that right and this project has no
-interest in obstructing it. What we do not yet offer is a *supported* self-host
-story — there is no published image and no promise that a deployment question
-gets answered. Running it is allowed and documented; operating it is currently
-your problem. If that changes it will be because people actually did it.
+**You may still run your own.** The AGPL grants you that right, this project has
+no interest in obstructing it, and the whole procedure is written down below.
+What is not on offer is *support*: there is no published container image, no
+proof that a live instance survives an upgrade of its own process, and no
+promise that a question about your Kubernetes, your Docker, your reverse proxy
+or your TLS gets an answer. Bugs in InvIntelX itself are welcome wherever you
+happened to notice them. Bugs in your cluster are yours. If that ever changes it
+will be because people actually ran it and said what broke.
+
+<!--
+  MAINTAINER — the screenshot this README is missing goes here. Capture it and
+  uncomment the line below; nothing else needs to change.
+
+      ![The InvIntelX dashboard: what needs a decision today](docs/images/dashboard.png)
+
+  docs/images/README.md says what to capture and why that shot rather than
+  another. It is commented out rather than left pointing at a file that does not
+  exist, because a broken image is a worse first impression than no image.
+-->
 
 Releases are semver tags cut from `main`, and every one of them says what breaks
 and what it will do to your database on first boot: see
@@ -24,9 +40,13 @@ shape is kept and put through the current build's migrations on every release,
 checking that nothing was lost and that on-hand still reconciles against the
 ledger.
 
-> **Status: early.** The first vertical slice works end to end — accounts, sign
-> in, and full CRUD over items. The stock ledger and the analytics that give the
-> project its name are next. See the roadmap below.
+> **Status: early, but whole.** The loop the name promises runs end to end:
+> accounts and sign in, items, locations, an append-only stock ledger with
+> on-hand derived from it, suppliers and their catalogues, an audit log, and a
+> dashboard that ranks what needs a decision today. Purchase orders are the
+> large missing piece — nothing in the product yet knows what is on its way or
+> when it was promised — and there is no published container image. See the
+> roadmap below.
 
 ## Stack
 
@@ -182,8 +202,8 @@ asks it to. If you would rather it did not, build only the API with
 `pnpm --filter @invintelx/api build` and it will log that it is serving `/api`
 only.
 
-None of this is a supported deployment yet — see the status note at the top.
-Releases are tagged, there is a changelog to read before you move, and the
+None of this makes your instance a supported deployment — invintelx.org is still
+the only one of those, as the top of this file says. Releases are tagged, there is a changelog to read before you move, and the
 upgrade is exercised against a recorded copy of every released database shape
 rather than merely described ([docs/upgrading.md](docs/upgrading.md)). What is
 still missing is a published image, and a proof that runs the old release's
@@ -253,13 +273,16 @@ anyone a set of live sessions.
 - [x] Monorepo, shared Zod contract, CI
 - [x] Accounts and session auth
 - [x] Items — model, API, and screen
-- [ ] Locations with a warehouse/bin hierarchy
-- [ ] StockMovement ledger and on-hand projection
-- [ ] Receive, issue, transfer, adjust, cycle count
+- [x] Locations with a warehouse/bin hierarchy
+- [x] StockMovement ledger and on-hand projection
+- [x] Receive, issue, transfer, adjust, reverse
+- [x] Suppliers, their catalogues and quantity price ladders
+- [x] Demand series, days of cover, reorder suggestions
+- [x] Dead stock, and a dashboard that ranks what needs a decision today
+- [x] Audit log for every change that is not a stock movement
+- [ ] Cycle count — `count` exists as a movement type with nothing that posts one
 - [ ] Purchase orders and receiving against a PO
-- [ ] Demand series, days of cover, reorder suggestions
-- [ ] ABC classification and dead stock
-- [ ] Dashboard
+- [ ] ABC classification
 
 ## Licence
 
@@ -284,5 +307,14 @@ licence is possible precisely because contributions are taken under a CLA.
 Contributions are welcome and require signing the
 [Contributor Licence Agreement](CLA.md). You keep the copyright in your work;
 the agreement grants the project the right to relicense, which is what makes a
-commercial exception possible without hunting down every past contributor. See
-[CONTRIBUTING.md](CONTRIBUTING.md).
+commercial exception possible without hunting down every past contributor.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the rest: the dev loop, how branches are
+named, and what happens to a pull request after you open it. Everyone taking
+part — issues, pull requests, review comments — follows the
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+Bugs and feature requests go through the issue forms, which ask which deployment
+you saw it on for the reason given at the top of this file. A security problem
+is the exception: report it privately using the link on the new-issue page
+rather than opening a public issue.
