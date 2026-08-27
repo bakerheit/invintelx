@@ -101,6 +101,7 @@ function onboardingState(overrides: Record<string, unknown> = {}) {
     movements: 900,
     empty: false,
     demo: null,
+    canLoadDemo: false,
     canManageDemo: true,
     ...overrides,
   };

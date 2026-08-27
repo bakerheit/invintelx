@@ -57,13 +57,14 @@ export async function readDemoState(): Promise<DemoDataState | null> {
 }
 
 export async function readOnboardingState(canManageDemo: boolean): Promise<OnboardingState> {
-  const [itemCount, locationCount, movementCount, demo] = await Promise.all([
+  const [itemCount, locationCount, movementCount, demo, refusal] = await Promise.all([
     // Archived items included: an archived SKU is still something somebody put
     // here, and an instance holding one is not a fresh instance.
     items().countDocuments({}),
     locations().countDocuments({}),
     movements().countDocuments({}),
     readDemoState(),
+    whyDemoCannotLoad(),
   ]);
 
   return {
@@ -72,6 +73,9 @@ export async function readOnboardingState(canManageDemo: boolean): Promise<Onboa
     movements: movementCount,
     empty: itemCount === 0 && locationCount === 0 && movementCount === 0,
     demo,
+    // Asked of the same function the endpoint enforces, so the screen cannot
+    // offer a button the server would refuse or hide one it would accept.
+    canLoadDemo: refusal === null,
     canManageDemo,
   };
 }
@@ -109,6 +113,13 @@ export async function loadDemoData(actor: {
   id: ObjectId;
   name: string;
 }): Promise<DemoDataCounts> {
+  // There is no marker, or the caller would have been refused — but there can
+  // still be demo rows, left by a load that died between its first insert and
+  // the marker at the end. Clearing them is what makes pressing the button
+  // again the way out of that, rather than a unique-index collision on the
+  // first SKU it tries to re-insert.
+  await clearDemoRows();
+
   const now = new Date();
   const dataset = buildDemoDataset({ now, actorId: actor.id, actorName: actor.name });
 
@@ -135,7 +146,9 @@ export async function loadDemoData(actor: {
 }
 
 /**
- * Take the demo back out, and nothing else.
+ * Delete every demo row, and nothing else. Leaves the marker and the stock
+ * projection alone — `removeDemoData` is the operation with a meaning, this is
+ * the half of it that both callers share.
  *
  * Movements are removed by item as well as by flag: somebody who has been
  * looking around has probably issued a few units of a demo SKU, and those rows
@@ -143,7 +156,7 @@ export async function loadDemoData(actor: {
  * no longer exist — so anything that moved a demo item goes with it. The same
  * reasoning covers supply lines pointing at demo items.
  */
-export async function removeDemoData(): Promise<DemoDataCounts> {
+async function clearDemoRows(): Promise<DemoDataCounts> {
   const demoItemIds = (
     await items().find({ isDemo: true }, { projection: { _id: 1 } }).toArray()
   ).map((doc) => doc._id);
@@ -158,11 +171,6 @@ export async function removeDemoData(): Promise<DemoDataCounts> {
   const removedSuppliers = await suppliers().deleteMany({ isDemo: true });
   const removedLocations = await locations().deleteMany({ isDemo: true });
 
-  // The projection is downstream of the ledger, so rebuilding it is what makes
-  // the deleted rows stop counting as stock on hand.
-  await rebuildStockLevels();
-  await demoState().deleteMany({});
-
   return {
     items: removedItems.deletedCount,
     locations: removedLocations.deletedCount,
@@ -170,4 +178,16 @@ export async function removeDemoData(): Promise<DemoDataCounts> {
     supplierItems: removedSupplyLines.deletedCount,
     movements: removedMovements.deletedCount,
   };
+}
+
+/** Take the demo back out: its rows, its stock, and the record that it was here. */
+export async function removeDemoData(): Promise<DemoDataCounts> {
+  const removed = await clearDemoRows();
+
+  // The projection is downstream of the ledger, so rebuilding it is what makes
+  // the deleted rows stop counting as stock on hand.
+  await rebuildStockLevels();
+  await demoState().deleteMany({});
+
+  return removed;
 }

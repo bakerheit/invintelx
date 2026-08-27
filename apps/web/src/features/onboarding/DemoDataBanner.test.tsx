@@ -30,6 +30,7 @@ function state(overrides: Partial<OnboardingState> = {}): OnboardingState {
     movements: 1204,
     empty: false,
     demo: DEMO,
+    canLoadDemo: false,
     canManageDemo: true,
     ...overrides,
   };

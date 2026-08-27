@@ -95,6 +95,7 @@ describe('GET /api/onboarding', () => {
       movements: 0,
       empty: true,
       demo: null,
+      canLoadDemo: true,
       canManageDemo: true,
     });
   });
@@ -111,6 +112,7 @@ describe('GET /api/onboarding', () => {
     expect(response.body.empty).toBe(false);
     expect(response.body.items).toBe(1);
     expect(response.body.demo).toBeNull();
+    expect(response.body.canLoadDemo).toBe(false);
   });
 
   it('tells a member that the demo dataset is not theirs to manage', async () => {
@@ -201,6 +203,28 @@ describe('POST /api/onboarding/demo', () => {
 
     await request(app).post('/api/onboarding/demo').set('Cookie', memberCookie).expect(403);
     expect(await db.items().countDocuments({})).toBe(0);
+  });
+
+  /*
+   * The marker is written last, so a load that dies part way through leaves
+   * demo rows and no record of them. Pressing the button again has to be the
+   * way out of that: without the sweep it is a unique-index collision on the
+   * first SKU it tries to insert twice, and the instance is stuck.
+   */
+  it('clears the wreckage of an interrupted load rather than colliding with it', async () => {
+    const cookie = await registerAndSignIn(ADMIN);
+    await request(app).post('/api/onboarding/demo').set('Cookie', cookie).expect(201);
+    const wholeDataset = await db.items().countDocuments({});
+    // What is left when the process dies between the first insert and the last.
+    await db.demoState().deleteMany({});
+    await db.movements().deleteMany({});
+
+    const state = await request(app).get('/api/onboarding').set('Cookie', cookie).expect(200);
+    expect(state.body.empty).toBe(false);
+    expect(state.body.canLoadDemo).toBe(true);
+
+    await request(app).post('/api/onboarding/demo').set('Cookie', cookie).expect(201);
+    expect(await db.items().countDocuments({})).toBe(wholeDataset);
   });
 });
 

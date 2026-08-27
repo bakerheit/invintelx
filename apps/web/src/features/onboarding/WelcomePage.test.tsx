@@ -23,6 +23,7 @@ function state(overrides: Partial<OnboardingState> = {}): OnboardingState {
     movements: 0,
     empty: true,
     demo: null,
+    canLoadDemo: true,
     canManageDemo: true,
     ...overrides,
   };
@@ -139,11 +140,24 @@ describe('WelcomePage', () => {
   });
 
   it('will not offer the demo to an instance that already has data of its own', async () => {
-    stubApi(state({ empty: false, items: 12 }));
+    stubApi(state({ empty: false, items: 12, canLoadDemo: false }));
     renderPage();
 
     expect(await screen.findByText(/very hard to unpick/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /load demo data/i })).not.toBeInTheDocument();
+  });
+
+  /*
+   * A load that died between its first insert and its last leaves demo rows
+   * with no marker. That instance is not empty, but the server will still
+   * accept a load — and pressing the button is the way out of it. Deciding
+   * from `empty` here would take that way out away.
+   */
+  it('offers the demo whenever the server says it would take it, empty or not', async () => {
+    stubApi(state({ empty: false, items: 12, canLoadDemo: true }));
+    renderPage();
+
+    expect(await screen.findByRole('button', { name: /load demo data/i })).toBeInTheDocument();
   });
 
   it('tells a member who to ask instead of showing a button that would be refused', async () => {
@@ -155,7 +169,7 @@ describe('WelcomePage', () => {
   });
 
   it('sends somebody already looking at the demo on to the dashboard', async () => {
-    stubApi(state({ empty: false, items: 40, demo: demoState() }));
+    stubApi(state({ empty: false, items: 40, canLoadDemo: false, demo: demoState() }));
     renderPage();
 
     expect(await screen.findByRole('link', { name: /go to the dashboard/i })).toBeInTheDocument();
