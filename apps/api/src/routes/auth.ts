@@ -23,13 +23,19 @@ import { auditedInsert, USER_AUDIT } from '../services/audit.js';
 export const authRouter: Router = Router();
 
 const loginLimiter = createRateLimiter({
+  name: 'login',
   limit: 10,
   windowMs: 15 * 60 * 1000,
   message: 'Too many sign-in attempts. Try again in a few minutes.',
   enabled: !isTest,
 });
 
-const registerLimiter = createRateLimiter({ limit: 5, windowMs: 60 * 60 * 1000, enabled: !isTest });
+const registerLimiter = createRateLimiter({
+  name: 'register',
+  limit: 5,
+  windowMs: 60 * 60 * 1000,
+  enabled: !isTest,
+});
 
 async function startSession(userId: ObjectId) {
   const token = generateSessionToken();
@@ -59,7 +65,7 @@ authRouter.get(
 authRouter.post(
   '/register',
   asyncHandler(async (req, res) => {
-    registerLimiter(req.ip ?? 'unknown');
+    await registerLimiter(req.ip ?? 'unknown');
     const input = parseOrThrow(registerInputSchema, req.body);
 
     const existing = await users().findOne({ email: input.email });
@@ -121,7 +127,7 @@ authRouter.post(
 authRouter.post(
   '/login',
   asyncHandler(async (req, res) => {
-    loginLimiter(req.ip ?? 'unknown');
+    await loginLimiter(req.ip ?? 'unknown');
     const input = parseOrThrow(loginInputSchema, req.body);
 
     const user = await users().findOne({ email: input.email });
