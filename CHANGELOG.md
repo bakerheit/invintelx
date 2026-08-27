@@ -63,17 +63,6 @@ this release is on the only shape the data has ever had.
   administrator without it. `SETUP_TOKEN` pins the token instead of minting
   one, and `FIRST_ADMIN_SETUP=open` turns the gate off for a public sign-up
   deployment. See the README.
-- The API serves the built web app itself, so a production instance is one
-  process on one origin. `WEB_DIST` overrides where it looks; pointing it at a
-  directory with no `index.html` is a boot failure rather than a warning.
-- `/api/health` reports the running version, so a bug report can say which
-  release it is against.
-- A documented backup and restore procedure, and a command that checks a restore
-  rather than assuming it. `pnpm db:verify` recomputes every on-hand figure from
-  the ledger and compares it with what is stored, writing nothing and exiting
-  non-zero if they disagree — which is what a dump taken without a consistent
-  snapshot leaves behind. `pnpm db:rebuild` does that, recomputes, and checks
-  again. See [docs/backup-and-restore.md](docs/backup-and-restore.md).
 - `MONGODB_DB` must be set explicitly when `NODE_ENV=production`, instead of
   defaulting to `invintelx`. Production and staging are expected to share a
   hosted cluster and be told apart by database name alone, so a default that
@@ -90,6 +79,17 @@ this release is on the only shape the data has ever had.
   and which have to come from the host's secret store before the first deploy,
   because the boot rule above turns a forgotten one into a failed release rather
   than a quiet mistake. The cluster does not exist yet; the page says so.
+- The API serves the built web app itself, so a production instance is one
+  process on one origin. `WEB_DIST` overrides where it looks; pointing it at a
+  directory with no `index.html` is a boot failure rather than a warning.
+- `/api/health` reports the running version, so a bug report can say which
+  release it is against.
+- A documented backup and restore procedure, and a command that checks a restore
+  rather than assuming it. `pnpm db:verify` recomputes every on-hand figure from
+  the ledger and compares it with what is stored, writing nothing and exiting
+  non-zero if they disagree — which is what a dump taken without a consistent
+  snapshot leaves behind. `pnpm db:rebuild` does that, recomputes, and checks
+  again. See [docs/backup-and-restore.md](docs/backup-and-restore.md).
 - Licensed AGPL-3.0-or-later, with the section 13 source offer the licence
   requires wired into the running app via `VITE_SOURCE_URL`. Point it at your
   own source if you modify InvIntelX and serve it to other people.
