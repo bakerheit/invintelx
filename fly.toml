@@ -1,0 +1,70 @@
+# Production configuration for invintelx.org. Reviewed like code, because
+# every value in here is a decision somebody has to be able to argue with.
+#
+# The image is never built from this file — `fly deploy --image <tag>` is what
+# the pipeline runs, so what ships is always a tag that already exists in GHCR
+# and rolling back is naming an older one. See docs/deploying.md.
+
+app = 'invintelx'
+
+# Every request does at least one Mongo round-trip, so this wants to be the
+# region the Atlas cluster is in. INVX-33 owns that choice and has not made it
+# yet; `lhr` is a placeholder and putting the app on the wrong side of an ocean
+# from its database is the one mistake this file can make on its own. Confirm
+# before the first deploy.
+primary_region = 'lhr'
+
+[env]
+  NODE_ENV = 'production'
+  PORT = '3001'
+  # Same-origin deployment, so this is only consulted by the CORS path in
+  # app.ts that never fires. Set correctly anyway: the day it does fire, a
+  # wrong value here is a security decision made by accident.
+  WEB_ORIGIN = 'https://invintelx.org'
+  # The instance mints a setup token at boot and prints it to the log, so
+  # deploying invintelx.org and claiming its first administrator account stay
+  # two separate acts. `open` would hand the first account to whoever reaches
+  # the site first, which is a product decision and not an infrastructure one —
+  # if the product wants public sign-up, change it here deliberately.
+  FIRST_ADMIN_SETUP = 'token'
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  # Not a hobby app. A cold start on the first request of the morning is a
+  # worse trade than the cost of leaving one machine up.
+  auto_start_machines = true
+  auto_stop_machines = 'off'
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = 'requests'
+    soft_limit = 200
+    hard_limit = 250
+
+# The check the platform actually polls, rather than a TCP connect that would
+# call a process with a dead database healthy. /api/health answers 503 when
+# Mongo is unreachable, which is what makes a rollback visible here.
+[[http_service.checks]]
+  interval = '15s'
+  timeout = '5s'
+  grace_period = '20s'
+  method = 'GET'
+  path = '/api/health'
+
+# Rolling, and therefore a few seconds of 503 on every deploy. Blue/green would
+# remove that, and would also have the incoming version run its boot migrations
+# against the database the outgoing version is still serving from. Nothing in
+# this repo has committed to migrations being safe across two versions at once,
+# so the deploy stops the old machine before the new one starts. Revisit when
+# there is an expand/contract rule to point at.
+[deploy]
+  strategy = 'rolling'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
+
+# Machine count is not in this file — it is `fly scale count`, deliberately.
+# It stays at 1 until INVX-59 lands: the rate limiter keys into this process's
+# memory, so a second machine silently doubles every limit it enforces.

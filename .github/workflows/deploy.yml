@@ -1,0 +1,200 @@
+name: Deploy
+
+# Production follows main. A commit that CI went green on is deployed and
+# nothing else is — this triggers on CI finishing rather than on the push, so
+# "deployed" cannot get ahead of "verified".
+#
+# Rollback is this same workflow, run by hand with the tag of a build that was
+# fine. No rebuild, no revert commit, no editing DNS at 2am. docs/deploying.md
+# has the runbook.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Existing image tag to deploy, e.g. main-a1b2c3d. Blank builds the current main.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+# One at a time, and never cancelled. A superseded CI run is fine; a deploy
+# killed between "old machine stopped" and "new machine healthy" is an outage.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  plan:
+    name: What is being deployed
+    # A CI run that failed, was cancelled, or was skipped is not a green main.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+      tag: ${{ steps.plan.outputs.tag }}
+      build: ${{ steps.plan.outputs.build }}
+      configured: ${{ steps.fly.outputs.configured }}
+    steps:
+      - id: plan
+        env:
+          # workflow_run reports the commit CI actually ran against. github.sha
+          # on this event is the tip of the default branch, which is not the
+          # same thing the moment two merges land close together.
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          REQUESTED: ${{ inputs.image_tag }}
+        run: |
+          if [ -n "$REQUESTED" ]; then
+            # A hand-typed value that ends up in a shell command and an image
+            # reference. Docker's own tag grammar is the smallest rule that
+            # rejects everything dangerous, so use it rather than inventing one.
+            case "$REQUESTED" in
+              *[!A-Za-z0-9._-]* | [!A-Za-z0-9_]*)
+                echo "::error title=Not a tag::'$REQUESTED' is not a valid image tag."
+                exit 1
+                ;;
+            esac
+            echo "sha=" >> "$GITHUB_OUTPUT"
+            echo "tag=$REQUESTED" >> "$GITHUB_OUTPUT"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "Redeploying an existing image: $REQUESTED" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+            echo "tag=main-${HEAD_SHA:0:7}" >> "$GITHUB_OUTPUT"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "Building main-${HEAD_SHA:0:7} from $HEAD_SHA" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Secrets are not readable from a job-level `if`, so the answer has to
+      # become an output first.
+      - id: fly
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -n "$FLY_API_TOKEN" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  image:
+    name: Build and push
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Every green main gets a tag of its own and keeps it. That immutable
+      # per-commit tag is the whole rollback story: `main` moves, main-<sha>
+      # never does, so "the one from before lunch" is always still pullable.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ needs.plan.outputs.tag }}
+            ${{ env.IMAGE }}:main
+          labels: |
+            org.opencontainers.image.title=InvIntelX
+            org.opencontainers.image.revision=${{ needs.plan.outputs.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Fly
+    needs: [plan, image]
+    # `always()` so a rollback, which skips the build, still gets here.
+    if: always() && needs.plan.result == 'success' && (needs.image.result == 'success' || needs.image.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # fly.toml from the commit being deployed, so code and configuration ship
+      # as a pair. A rollback has no commit — it names an image — and gets the
+      # config from main, which is the one somebody currently believes in.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+
+      # Nobody has created the Fly app yet. Failing every merge to main until
+      # they do would train people to ignore a red main, and the image above is
+      # published either way — so say it in the summary and stop here. This
+      # starts deploying on its own the moment FLY_API_TOKEN exists, with no
+      # change to this file. Same trade as the image step in release.yml.
+      - name: Is there anywhere to deploy to?
+        if: needs.plan.outputs.configured != 'true'
+        env:
+          REF: ${{ env.IMAGE }}:${{ needs.plan.outputs.tag }}
+        run: |
+          echo "::warning title=Not deployed::FLY_API_TOKEN is not set, so $REF was published but not deployed."
+          {
+            echo "### Not deployed"
+            echo
+            echo "\`$REF\` was pushed and is deployable, but this repository has no \`FLY_API_TOKEN\` secret, so nothing was released to invintelx.org."
+            echo
+            echo "The one-time setup is in \`docs/deploying.md\`. This job starts deploying by itself once the secret exists."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # @master because that is the only ref Fly publishes for this action and
+      # documents using. It is a third-party action on a moving ref holding a
+      # deploy token, which is worth knowing about even though the alternative
+      # — curling their install script — is no better pinned.
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+        if: needs.plan.outputs.configured == 'true'
+
+      # --image, never a build: what reaches production is a tag that already
+      # exists and has already been through CI. It also makes the deploy and
+      # the rollback literally the same command with a different tag.
+      - name: Deploy
+        if: needs.plan.outputs.configured == 'true'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          # Through the environment rather than interpolated into the script:
+          # on a manual run the tag is something a person typed into a box.
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          flyctl deploy \
+            --config fly.toml \
+            --image "${IMAGE}:${TAG}" \
+            --wait-timeout 300
+
+      # Fly's own health check already gates the release, so this is the second
+      # opinion: the same URL a browser would use, from outside Fly's network.
+      - name: Smoke check
+        if: needs.plan.outputs.configured == 'true'
+        run: |
+          app="$(grep -m1 '^app' fly.toml | cut -d"'" -f2)"
+          url="https://${app}.fly.dev/api/health"
+          for attempt in 1 2 3 4 5 6; do
+            body="$(curl -fsS --max-time 10 "$url")" && break
+            echo "attempt $attempt: no healthy response from $url yet"
+            sleep 10
+          done
+          echo "$body"
+          echo "$body" | grep -q '"status":"ok"' || {
+            echo "::error title=Deployed but unhealthy::$url did not report status ok. Roll back with the previous main-<sha> tag - see docs/deploying.md."
+            exit 1
+          }

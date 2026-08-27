@@ -109,16 +109,19 @@ completely or does not happen:
 Nothing here force-pushes a tag or moves one. A published version is immutable:
 if a release is wrong, the fix is the next patch version, not a moved tag.
 
-### The image step is not finished yet
+### The image step, now that there is a Dockerfile
 
-There is no `Dockerfile` in this repository yet. Until there is, the image job
-does not fail the release — it writes a warning into the run summary saying no
-image was published, and the release is otherwise real. When the Dockerfile
-lands the job starts publishing with no change to this workflow.
+There is a `Dockerfile`, so the image job publishes rather than warning — that
+happened with no edit to `release.yml`, which is how it was designed. A release
+now means "a tag, a changelog entry, a GitHub release, and an image you can
+pull". No release has been cut since it landed, so the first tag after it is
+also the first proof that the job does what it says.
 
-So today a release means "a tag, a changelog entry, and a GitHub release you can
-build from source". It does not yet mean "an image you can pull", and the
-changelog's *Known limitations* says so.
+The same `Dockerfile` builds the continuous image that
+[`deploy.yml`](../.github/workflows/deploy.yml) puts on invintelx.org, tagged
+`main-<sha>` rather than with a version. Releases and deploys therefore ship the
+same artefact built the same way; what differs is what the tag promises.
+[docs/deploying.md](deploying.md) covers that side.
 
 Two other things a supported upgrade path needs are also not here yet: schema
 migrations with a recorded database version, and an upgrade exercised in CI
