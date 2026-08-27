@@ -143,7 +143,9 @@ jobs:
       # they do would train people to ignore a red main, and the image above is
       # published either way — so say it in the summary and stop here. This
       # starts deploying on its own the moment FLY_API_TOKEN exists, with no
-      # change to this file. Same trade as the image step in release.yml.
+      # change to this file. Delete this step once the secret is set and the
+      # first deploy has happened — an unreachable branch that says "not
+      # deployed" is worse than no branch once it can never be true.
       - name: Is there anywhere to deploy to?
         if: needs.plan.outputs.configured != 'true'
         env:

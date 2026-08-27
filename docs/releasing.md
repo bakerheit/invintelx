@@ -111,11 +111,13 @@ if a release is wrong, the fix is the next patch version, not a moved tag.
 
 ### The image step, now that there is a Dockerfile
 
-There is a `Dockerfile`, so the image job publishes rather than warning — that
-happened with no edit to `release.yml`, which is how it was designed. A release
-now means "a tag, a changelog entry, a GitHub release, and an image you can
-pull". No release has been cut since it landed, so the first tag after it is
-also the first proof that the job does what it says.
+There is a `Dockerfile` now, so a release means "a tag, a changelog entry, a
+GitHub release, and an image you can pull". The job used to tolerate the file
+being absent and write a warning into the run summary instead of publishing;
+that tolerance has been removed rather than left to sit unreachable, so a
+release whose image will not build now fails loudly instead of quietly shipping
+less than it claims. No release has been cut since, so the first tag after this
+is also the first proof that the job does what it says.
 
 The same `Dockerfile` builds the continuous image that
 [`deploy.yml`](../.github/workflows/deploy.yml) puts on invintelx.org, tagged
