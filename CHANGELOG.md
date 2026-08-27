@@ -68,6 +68,10 @@ this release is on the only shape the data has ever had.
   directory with no `index.html` is a boot failure rather than a warning.
 - `/api/health` reports the running version, so a bug report can say which
   release it is against.
+- Rate limits on sign-in and registration, counted in MongoDB against a TTL
+  index rather than in each process's memory. The quota is the deployment's, so
+  running a second API instance no longer doubles it — which is what running
+  more than one of them needed before it could be done safely.
 - A documented backup and restore procedure, and a command that checks a restore
   rather than assuming it. `pnpm db:verify` recomputes every on-hand figure from
   the ledger and compares it with what is stored, writing nothing and exiting
