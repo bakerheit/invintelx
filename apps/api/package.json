@@ -9,6 +9,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "seed": "tsx src/seed.ts",
+    "reconcile": "tsx src/reconcile.ts",
+    "reconcile:rebuild": "tsx src/reconcile.ts --rebuild",
     "test": "vitest run"
   },
   "dependencies": {

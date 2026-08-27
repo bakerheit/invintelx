@@ -228,22 +228,21 @@ export async function ensureIndexes(): Promise<void> {
   await stockLevels().createIndex({ itemId: 1 }, { name: 'by_item' });
 }
 
-/**
- * Recompute every on-hand figure from the ledger.
- *
- * The projection is only worth trusting if it can be re-derived, so this exists
- * as much to prove the invariant as to repair it. Safe to run at any time: the
- * ledger is the source of truth and this only rewrites what is downstream of it.
- */
-export async function rebuildStockLevels(): Promise<{ levels: number; movements: number }> {
-  const totalMovements = await movements().countDocuments({});
+interface LedgerTotal {
+  _id: { itemId: ObjectId; locationId: ObjectId };
+  onHand: number;
+  locationCode: string;
+}
 
-  const computed = await movements()
-    .aggregate<{
-      _id: { itemId: ObjectId; locationId: ObjectId };
-      onHand: number;
-      locationCode: string;
-    }>([
+/**
+ * What the ledger sums to, one row per item/location pair that has ever moved.
+ *
+ * Shared by the rebuild and the check below so that "what the ledger says"
+ * cannot quietly mean two different things depending on which one you ran.
+ */
+async function sumLedgerByItemLocation(): Promise<LedgerTotal[]> {
+  return movements()
+    .aggregate<LedgerTotal>([
       {
         $group: {
           _id: { itemId: '$itemId', locationId: '$locationId' },
@@ -253,6 +252,126 @@ export async function rebuildStockLevels(): Promise<{ levels: number; movements:
       },
     ])
     .toArray();
+}
+
+/**
+ * One item/location pair where the projection and the ledger disagree.
+ *
+ * `stored` is null when the ledger has movements for a pair the projection has
+ * no row for; `ledger` is null when the projection holds a row for a pair the
+ * ledger knows nothing about. Both being non-null means the two simply differ.
+ */
+export interface StockLevelDiscrepancy {
+  itemId: ObjectId;
+  locationId: ObjectId;
+  locationCode: string;
+  stored: number | null;
+  ledger: number | null;
+}
+
+export interface StockLevelVerification {
+  /** Rows in the ledger, which is the number a restore is really about. */
+  movements: number;
+  /** Item/location pairs the ledger implies an on-hand figure for. */
+  expectedLevels: number;
+  /** Rows the projection actually holds. */
+  storedLevels: number;
+  /** Sorted by location code, so two runs print the same list in the same order. */
+  discrepancies: StockLevelDiscrepancy[];
+}
+
+/**
+ * Compare the stored projection against what the ledger sums to. Writes nothing.
+ *
+ * This is the check a restore ends with, and it has to run *before* any rebuild.
+ * `rebuildStockLevels` cannot answer "did the restore work": it overwrites
+ * on-hand with whatever the restored ledger says, so it agrees with a damaged
+ * ledger exactly as readily as an intact one, and leaves no trace of which it
+ * was. Comparing first is what turns the answer into evidence — a snapshot whose
+ * ledger and projection still agree is a snapshot that was taken consistently.
+ *
+ * What it cannot tell you is whether the snapshot is *complete*. A dump taken at
+ * 02:00 is internally consistent and missing everything that happened after it,
+ * and nothing inside the restored database can see the difference.
+ */
+export async function verifyStockLevels(): Promise<StockLevelVerification> {
+  const totalMovements = await movements().countDocuments({});
+  const computed = await sumLedgerByItemLocation();
+
+  const key = (itemId: ObjectId, locationId: ObjectId): string =>
+    `${itemId.toHexString()}:${locationId.toHexString()}`;
+
+  const fromLedger = new Map(computed.map((row) => [key(row._id.itemId, row._id.locationId), row]));
+
+  const discrepancies: StockLevelDiscrepancy[] = [];
+  const seen = new Set<string>();
+  let storedLevels = 0;
+
+  // Streamed rather than collected: the ledger totals already sit in memory and
+  // the projection is the same order of magnitude, so there is no reason to hold
+  // a second copy of it.
+  for await (const level of stockLevels().find({})) {
+    storedLevels += 1;
+    const k = key(level.itemId, level.locationId);
+    seen.add(k);
+
+    const expected = fromLedger.get(k);
+    if (!expected) {
+      discrepancies.push({
+        itemId: level.itemId,
+        locationId: level.locationId,
+        locationCode: level.locationCode,
+        stored: level.onHand,
+        ledger: null,
+      });
+    } else if (expected.onHand !== level.onHand) {
+      discrepancies.push({
+        itemId: level.itemId,
+        locationId: level.locationId,
+        locationCode: level.locationCode,
+        stored: level.onHand,
+        ledger: expected.onHand,
+      });
+    }
+  }
+
+  for (const [k, row] of fromLedger) {
+    if (seen.has(k)) continue;
+    discrepancies.push({
+      itemId: row._id.itemId,
+      locationId: row._id.locationId,
+      locationCode: row.locationCode,
+      stored: null,
+      ledger: row.onHand,
+    });
+  }
+
+  discrepancies.sort(
+    (a, b) =>
+      a.locationCode.localeCompare(b.locationCode) ||
+      a.itemId.toHexString().localeCompare(b.itemId.toHexString()),
+  );
+
+  return {
+    movements: totalMovements,
+    expectedLevels: fromLedger.size,
+    storedLevels,
+    discrepancies,
+  };
+}
+
+/**
+ * Recompute every on-hand figure from the ledger.
+ *
+ * The projection is only worth trusting if it can be re-derived, so this exists
+ * as much to prove the invariant as to repair it. Safe to run at any time: the
+ * ledger is the source of truth and this only rewrites what is downstream of it.
+ *
+ * It is a repair, not a check — see `verifyStockLevels` for the difference.
+ */
+export async function rebuildStockLevels(): Promise<{ levels: number; movements: number }> {
+  const totalMovements = await movements().countDocuments({});
+  const computed = await sumLedgerByItemLocation();
 
   const now = new Date();
   await stockLevels().deleteMany({});

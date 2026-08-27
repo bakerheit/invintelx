@@ -54,6 +54,12 @@ this release is on the only shape the data has ever had.
   directory with no `index.html` is a boot failure rather than a warning.
 - `/api/health` reports the running version, so a bug report can say which
   release it is against.
+- A documented backup and restore procedure, and a command that checks a restore
+  rather than assuming it. `pnpm db:verify` recomputes every on-hand figure from
+  the ledger and compares it with what is stored, writing nothing and exiting
+  non-zero if they disagree — which is what a dump taken without a consistent
+  snapshot leaves behind. `pnpm db:rebuild` does that, recomputes, and checks
+  again. See [docs/backup-and-restore.md](docs/backup-and-restore.md).
 - Licensed AGPL-3.0-or-later, with the section 13 source offer the licence
   requires wired into the running app via `VITE_SOURCE_URL`. Point it at your
   own source if you modify InvIntelX and serve it to other people.
@@ -65,4 +71,7 @@ this release is on the only shape the data has ever had.
 - No upgrade has been exercised across a version boundary, because there is no
   earlier version to exercise it from. Whether skipping versions will be
   allowed is not decided yet.
+- The restore procedure is documented and its final check is tested, but nobody
+  has yet run it end to end against a real deployment. An untested backup is a
+  belief; treat it as documented rather than proven.
 - Self-hosting is permitted and documented but not *supported*. See the README.

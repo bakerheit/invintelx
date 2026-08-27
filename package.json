@@ -21,6 +21,8 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:seed": "pnpm --filter @invintelx/api seed",
+    "db:verify": "pnpm --filter @invintelx/api reconcile",
+    "db:rebuild": "pnpm --filter @invintelx/api reconcile:rebuild",
     "db:local": "node scripts/dev-mongo.mjs"
   },
   "devDependencies": {
