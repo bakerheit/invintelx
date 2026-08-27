@@ -1,4 +1,4 @@
-import { ObjectId, type Collection } from 'mongodb';
+import { ObjectId } from 'mongodb';
 import {
   canCancel,
   canEditLines,
@@ -14,33 +14,16 @@ import {
 import {
   PURCHASE_ORDER_NUMBER_COUNTER,
   counters,
-  getDb,
   items,
   purchaseOrders,
+  suppliers,
   type PurchaseOrderDoc,
   type PurchaseOrderLineDoc,
+  type SupplierDoc,
 } from '../db.js';
 import { BadRequestError, NotFoundError } from '../errors.js';
 import { applyReceivedDeltas, type ReceivedDelta } from './purchaseOrderLines.js';
 import { postMovements, type Actor, type PostedMovement } from './ledger.js';
-
-/**
- * The part of a supplier a purchase order needs: that it exists, that it is
- * still one you buy from, and what to write on the order.
- *
- * The suppliers collection belongs to INVX-25, which is not merged yet. Naming
- * only the four fields this ticket reads keeps that model in one place rather
- * than half-copied here, and means the full `SupplierDoc` arriving alongside it
- * adds fields to a document this already reads correctly.
- */
-interface SupplierRef {
-  _id: ObjectId;
-  code: string;
-  name: string;
-  status: 'active' | 'archived';
-}
-
-const supplierRefs = (): Collection<SupplierRef> => getDb().collection<SupplierRef>('suppliers');
 
 /**
  * Take the next order number.
@@ -59,8 +42,13 @@ async function nextPurchaseOrderNumber(): Promise<string> {
   return formatPurchaseOrderNumber(counter?.seq ?? 1);
 }
 
-async function resolveSupplier(supplierId: ObjectId): Promise<SupplierRef> {
-  const supplier = await supplierRefs().findOne({ _id: supplierId });
+/**
+ * That the supplier exists, that it is still one you buy from, and what to write
+ * on the order. The document is INVX-25's; a purchase order reads four fields of
+ * it and owns none of them.
+ */
+async function resolveSupplier(supplierId: ObjectId): Promise<SupplierDoc> {
+  const supplier = await suppliers().findOne({ _id: supplierId });
   if (!supplier) throw new NotFoundError('No supplier with that id');
   if (supplier.status === 'archived') {
     throw new BadRequestError('That supplier is archived, so nothing can be ordered from them', {

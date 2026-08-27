@@ -4,8 +4,12 @@ import type {
   ItemStatus,
   LocationType,
   MovementType,
+  PaymentTerms,
+  PriceBreak,
   PurchaseOrderStatus,
   Role,
+  SupplierContact,
+  SupplierStatus,
   UnitOfMeasure,
 } from '@invintelx/shared';
 import { env } from './env.js';
@@ -103,6 +107,38 @@ export interface LocationDoc {
   path: ObjectId[];
   pathLabel: string;
   isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface SupplierDoc {
+  _id: ObjectId;
+  code: string;
+  name: string;
+  status: SupplierStatus;
+  contact: SupplierContact;
+  paymentTerms: PaymentTerms;
+  /** ISO 4217, so the price breaks beneath this supplier mean something. */
+  currency: string;
+  /** What they say. Never written from observed receipts - see the schema. */
+  promisedLeadTimeDays: number;
+  notes: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * The join between a supplier and an item, carrying the terms of that one line:
+ * their part number for it, and the quantity ladder they price it on.
+ */
+export interface SupplierItemDoc {
+  _id: ObjectId;
+  supplierId: ObjectId;
+  itemId: ObjectId;
+  /** Stored with the supplier's own casing; the unique index is what ignores case. */
+  supplierSku: string;
+  /** Ascending by minQuantity, canonicalised by the schema on the way in. */
+  priceBreaks: PriceBreak[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -240,6 +276,9 @@ export const setupTokens = (): Collection<SetupTokenDoc> =>
   getDb().collection<SetupTokenDoc>('setupTokens');
 export const items = (): Collection<ItemDoc> => getDb().collection<ItemDoc>('items');
 export const locations = (): Collection<LocationDoc> => getDb().collection<LocationDoc>('locations');
+export const suppliers = (): Collection<SupplierDoc> => getDb().collection<SupplierDoc>('suppliers');
+export const supplierItems = (): Collection<SupplierItemDoc> =>
+  getDb().collection<SupplierItemDoc>('supplierItems');
 export const movements = (): Collection<MovementDoc> => getDb().collection<MovementDoc>('movements');
 export const purchaseOrders = (): Collection<PurchaseOrderDoc> =>
   getDb().collection<PurchaseOrderDoc>('purchaseOrders');
@@ -273,6 +312,33 @@ export async function ensureIndexes(): Promise<void> {
   // Subtree queries filter on path membership, so it has to be indexed.
   await locations().createIndex({ path: 1 }, { name: 'by_path' });
   await locations().createIndex({ type: 1, isActive: 1 }, { name: 'by_type_active' });
+
+  await suppliers().createIndex({ code: 1 }, { unique: true, name: 'uniq_code' });
+  await suppliers().createIndex({ status: 1, name: 1 }, { name: 'by_status_name' });
+
+  // One line per supplier per item. Two rows for the same pair would give a
+  // purchase order two part numbers to choose between.
+  await supplierItems().createIndex(
+    { supplierId: 1, itemId: 1 },
+    { unique: true, name: 'uniq_supplier_item' },
+  );
+  /*
+   * A supplier's part number identifies one product to them, and it identifies
+   * the same one whatever case it is typed in. The value is stored as they
+   * write it, so case-insensitivity has to live in the index: strength 2
+   * compares base letters only, which makes "AB-1" and "ab-1" collide here
+   * without either of them being rewritten.
+   */
+  await supplierItems().createIndex(
+    { supplierId: 1, supplierSku: 1 },
+    {
+      unique: true,
+      name: 'uniq_supplier_sku',
+      collation: { locale: 'en', strength: 2 },
+    },
+  );
+  // "Who else sells this?" is the question the reorder screen will ask.
+  await supplierItems().createIndex({ itemId: 1 }, { name: 'by_item' });
 
   // The demand series aggregates movements per item over a date window, and the
   // item history page reads one item newest-first. Both are this index.

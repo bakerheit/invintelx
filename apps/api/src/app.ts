@@ -8,6 +8,7 @@ import { authRouter } from './routes/auth.js';
 import { itemsRouter } from './routes/items.js';
 import { locationsRouter } from './routes/locations.js';
 import { movementsRouter } from './routes/movements.js';
+import { suppliersRouter } from './routes/suppliers.js';
 import { purchaseOrdersRouter } from './routes/purchaseOrders.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { webAssets } from './web.js';
@@ -93,6 +94,7 @@ export function createApp(): Express {
   app.use('/api/items', requireAuth, itemsRouter);
   app.use('/api/locations', requireAuth, locationsRouter);
   app.use('/api/movements', requireAuth, movementsRouter);
+  app.use('/api/suppliers', requireAuth, suppliersRouter);
   app.use('/api/purchase-orders', requireAuth, purchaseOrdersRouter);
   app.use('/api/analytics', requireAuth, analyticsRouter);
 

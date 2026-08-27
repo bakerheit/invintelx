@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from './FormField';
 import { useAuth } from './AuthProvider';
 import { AuthLayout } from './AuthLayout';
+import { safeRedirect } from './redirect';
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -25,8 +26,10 @@ export function LoginPage() {
     setFormError(null);
     try {
       await login(values);
+      // Where they were headed before being bounced here, if it is somewhere
+      // inside this app. See safeRedirect for why that is checked and not assumed.
       const from = (location.state as { from?: string } | null)?.from;
-      navigate(from ?? '/items', { replace: true });
+      navigate(safeRedirect(from), { replace: true });
     } catch (error) {
       setFormError(
         error instanceof ApiError ? error.message : 'Could not sign in. Please try again.',
@@ -41,7 +44,6 @@ export function LoginPage() {
           label="Email"
           type="email"
           autoComplete="email"
-          autoFocus
           error={errors.email?.message}
           {...register('email')}
         />

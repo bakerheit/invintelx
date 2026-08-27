@@ -5,25 +5,33 @@
  * Run with: pnpm db:seed
  */
 import { ObjectId } from 'mongodb';
-import type { UnitOfMeasure } from '@invintelx/shared';
+import type { PaymentTerms, PriceBreak, SupplierContact, UnitOfMeasure } from '@invintelx/shared';
 import { env } from './env.js';
 import {
+  PURCHASE_ORDER_NUMBER_COUNTER,
   connect,
+  counters,
   disconnect,
   ensureIndexes,
   items,
   locations,
   movements,
+  purchaseOrders,
   rebuildStockLevels,
   sessions,
   stockLevels,
+  supplierItems,
+  suppliers,
   users,
   type ItemDoc,
   type LocationDoc,
   type MovementDoc,
+  type SupplierDoc,
+  type SupplierItemDoc,
 } from './db.js';
 import { hashPassword } from './lib/password.js';
 import { runMigrations } from './migrations/index.js';
+import { SEED_PURCHASE_ORDERS, buildPurchaseOrders } from './seedPurchaseOrders.js';
 
 const DEMO_EMAIL = 'demo@invintelx.org';
 const DEMO_PASSWORD = 'invintelx-demo-password';
@@ -81,6 +89,115 @@ const CATALOG: SeedItem[] = [
   { sku: 'BLK-CONC-100', name: 'Concrete block 100mm', category: 'Aggregates', unitOfMeasure: 'each', costCents: 145, priceCents: 349, reorderPoint: 500, reorderQuantity: 1200 },
   { sku: 'BRICK-CMN', name: 'Common brick', category: 'Aggregates', unitOfMeasure: 'each', costCents: 58, priceCents: 139, reorderPoint: 2000, reorderQuantity: 5000 },
 ];
+
+interface SeedSupplier {
+  code: string;
+  name: string;
+  /** Which part of the catalogue this one carries. Empty means all of it. */
+  categories: string[];
+  paymentTerms: PaymentTerms;
+  promisedLeadTimeDays: number;
+  /** Multiplier on our unit cost, so the demo has a cheap slow one and a dear fast one. */
+  priceFactor: number;
+  contact: SupplierContact;
+}
+
+const SUPPLIERS: SeedSupplier[] = [
+  {
+    code: 'FIXFAST',
+    name: 'FixFast Fasteners',
+    categories: ['Fasteners'],
+    paymentTerms: 'net_30',
+    promisedLeadTimeDays: 7,
+    priceFactor: 1,
+    contact: {
+      name: 'Dana Okoro',
+      email: 'sales@fixfast.example',
+      phone: '0100 010 0101',
+      website: 'https://fixfast.example',
+      address: 'Unit 4, Bolt Road, Sheffield',
+    },
+  },
+  {
+    code: 'AQUALINE',
+    name: 'Aqualine Plumbing Supply',
+    categories: ['Plumbing'],
+    paymentTerms: 'net_45',
+    promisedLeadTimeDays: 14,
+    priceFactor: 0.98,
+    contact: {
+      name: 'Priya Raman',
+      email: 'trade@aqualine.example',
+      phone: '0100 020 0202',
+      website: 'https://aqualine.example',
+      address: '18 Culvert Way, Leeds',
+    },
+  },
+  {
+    code: 'VOLTEC',
+    name: 'Voltec Electrical Wholesale',
+    categories: ['Electrical', 'Safety'],
+    paymentTerms: 'net_30',
+    promisedLeadTimeDays: 21,
+    priceFactor: 0.95,
+    contact: {
+      name: 'Sam Whitfield',
+      email: 'orders@voltec.example',
+      phone: '0100 030 0303',
+      website: 'https://voltec.example',
+      address: 'Voltec House, Ring Road, Birmingham',
+    },
+  },
+  {
+    code: 'TIMBERCO',
+    name: 'TimberCo Merchants',
+    categories: ['Timber', 'Aggregates', 'Paint'],
+    paymentTerms: 'net_60',
+    promisedLeadTimeDays: 28,
+    priceFactor: 0.92,
+    contact: {
+      name: 'Grace Ellery',
+      email: 'accounts@timberco.example',
+      phone: '0100 040 0404',
+      website: 'https://timberco.example',
+      address: 'Sawmill Lane, Carlisle',
+    },
+  },
+  {
+    /*
+     * The second source for everything: three days and a premium. Two suppliers
+     * on most items is what makes "who do we buy this from, and what does the
+     * hurry cost" a question the demo data can actually answer.
+     */
+    code: 'BROADSTOCK',
+    name: 'Broadstock Trade Supplies',
+    categories: [],
+    paymentTerms: 'cod',
+    promisedLeadTimeDays: 3,
+    priceFactor: 1.14,
+    contact: {
+      name: 'Counter desk',
+      email: 'counter@broadstock.example',
+      phone: '0100 050 0505',
+      website: 'https://broadstock.example',
+      address: '2 Trade Park, Manchester',
+    },
+  },
+];
+
+/**
+ * A three-rung ladder off our own unit cost: list price at one, and something
+ * off it at ten and a hundred. Enough for the price-break UI to have something
+ * to show without pretending to be a real price list.
+ */
+function priceLadder(unitCostCents: number, factor: number): PriceBreak[] {
+  const base = Math.max(1, Math.round(unitCostCents * factor));
+  return [
+    { minQuantity: 1, unitPriceCents: base },
+    { minQuantity: 10, unitPriceCents: Math.max(1, Math.round(base * 0.95)) },
+    { minQuantity: 100, unitPriceCents: Math.max(1, Math.round(base * 0.9)) },
+  ];
+}
 
 /**
  * Deterministic pseudo-random, so the demo dataset is identical on every run.
@@ -203,6 +320,10 @@ async function main(): Promise<void> {
     locations().deleteMany({}),
     movements().deleteMany({}),
     stockLevels().deleteMany({}),
+    suppliers().deleteMany({}),
+    supplierItems().deleteMany({}),
+    purchaseOrders().deleteMany({}),
+    counters().deleteMany({}),
   ]);
 
   const now = new Date();
@@ -294,12 +415,84 @@ async function main(): Promise<void> {
 
   await locations().insertMany([site, ...zones, ...bins]);
 
+  /*
+   * Suppliers and their catalogues. Derived from the item list rather than
+   * randomised, so who supplies what does not move between runs - and no
+   * draw is taken from `random` here, which would shift the ledger below.
+   */
+  const supplierDocs: SupplierDoc[] = SUPPLIERS.map((seed) => ({
+    _id: new ObjectId(),
+    code: seed.code,
+    name: seed.name,
+    status: 'active',
+    contact: seed.contact,
+    paymentTerms: seed.paymentTerms,
+    currency: 'USD',
+    promisedLeadTimeDays: seed.promisedLeadTimeDays,
+    notes: '',
+    createdAt: now,
+    updatedAt: now,
+  }));
+  await suppliers().insertMany(supplierDocs);
+
+  const supplyLines: SupplierItemDoc[] = supplierDocs.flatMap((supplier, supplierIndex) => {
+    const seed = SUPPLIERS[supplierIndex];
+    if (!seed) return [];
+    const carried = docs.filter(
+      (item) => seed.categories.length === 0 || seed.categories.includes(item.category),
+    );
+    return carried.map((item, index) => ({
+      _id: new ObjectId(),
+      supplierId: supplier._id,
+      itemId: item._id,
+      supplierSku: `${supplier.code.slice(0, 3)}-${String(1000 + index)}`,
+      priceBreaks: priceLadder(item.unitCostCents, seed.priceFactor),
+      createdAt: now,
+      updatedAt: now,
+    }));
+  });
+  await supplierItems().insertMany(supplyLines);
+
+  /*
+   * Purchase orders and the deliveries that landed against them. Built before
+   * the ledger is written so their receipts go in with it and the stock-level
+   * rebuild below sees them - a seeded receipt that the projection never counted
+   * would leave on-hand disagreeing with the ledger on a fresh install, which is
+   * the one thing this dataset must not demonstrate.
+   */
+  const receivingBin = bins[0];
+  const purchasing = receivingBin
+    ? buildPurchaseOrders(
+        SEED_PURCHASE_ORDERS,
+        supplierDocs,
+        supplyLines,
+        docs,
+        receivingBin,
+        adminId,
+        'Demo Admin',
+        now,
+      )
+    : { orders: [], receipts: [] };
+  if (purchasing.orders.length > 0) {
+    await purchaseOrders().insertMany(purchasing.orders);
+    /*
+     * Advance the counter past the numbers just handed out. Without this the
+     * first order raised through the API takes PO-00001 again and is refused by
+     * the unique index - a seeded database that breaks the feature it seeds.
+     */
+    await counters().updateOne(
+      { _id: PURCHASE_ORDER_NUMBER_COUNTER },
+      { $set: { seq: purchasing.orders.length } },
+      { upsert: true },
+    );
+  }
+
   // Any fixed value will do; what matters is that it never changes.
   const random = makeRandom(0xc0ffee);
   const ledger = docs.flatMap((item) =>
     buildLedger(item, bins, adminId, 'Demo Admin', now, random),
   );
-  await movements().insertMany(ledger);
+  await movements().insertMany([...ledger, ...purchasing.receipts]);
 
   // Derive on-hand from the ledger rather than writing it, which is the same
   // path production uses and proves the projection is reproducible.
@@ -307,7 +500,13 @@ async function main(): Promise<void> {
 
   console.log(`  ${docs.length} items`);
   console.log(`  ${1 + zones.length + bins.length} locations`);
+  console.log(`  ${supplierDocs.length} suppliers with ${supplyLines.length} supply lines`);
   console.log(`  ${ledger.length} movements over ${HISTORY_DAYS} days`);
+  console.log(
+    `  ${purchasing.orders.length} purchase orders (${purchasing.orders
+      .map((order) => order.status)
+      .join(', ')}) with ${purchasing.receipts.length} receipts against them`,
+  );
   console.log(`  ${rebuilt.levels} stock levels projected from the ledger`);
   console.log(`  1 user: ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
   console.log('Done.');

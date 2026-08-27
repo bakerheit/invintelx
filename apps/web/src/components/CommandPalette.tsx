@@ -46,6 +46,14 @@ export function CommandPalette() {
 
         <div className="border-b border-border p-2">
           <Input
+            /*
+             * no-autofocus is about a page that steals focus on load. This is a
+             * dialog the user has just opened with a keystroke, and a command
+             * palette that does not put the caret in its own search box is
+             * broken - the ARIA dialog pattern asks for focus to move inside on
+             * open, which is what this does.
+             */
+            // eslint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}

@@ -3,6 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { ObjectId } from 'mongodb';
 import request from 'supertest';
 import type { Express } from 'express';
+import type { SupplierStatus } from '@invintelx/shared';
 import type * as DbModule from '../db.js';
 
 let replSet: MongoMemoryReplSet;
@@ -25,21 +26,25 @@ async function signIn(): Promise<string> {
 }
 
 /**
- * Suppliers are INVX-25's collection and it is not merged, so there is no
- * endpoint to create one from. These tests only need an order to have somebody
- * to be addressed to, so they write the four fields a purchase order reads and
- * leave the rest of the supplier model to the ticket that owns it.
+ * Through INVX-25's API rather than into its collection.
+ *
+ * Writing the document directly would let these tests pass against a supplier
+ * shape nothing else in the product agrees to — which is the failure worth
+ * catching here, because a purchase order is the first thing outside INVX-25 to
+ * read one. Archiving goes through the archive endpoint for the same reason.
  */
 async function makeSupplier(
   code: string,
-  status: 'active' | 'archived' = 'active',
+  status: SupplierStatus = 'active',
 ): Promise<string> {
-  const id = new ObjectId();
-  await db
-    .getDb()
-    .collection('suppliers')
-    .insertOne({ _id: id, code, name: `${code} Supplies Ltd`, status });
-  return id.toHexString();
+  const created = await post('/api/suppliers')
+    .send({ code, name: `${code} Supplies Ltd` })
+    .expect(201);
+  const id = created.body.id as string;
+  if (status === 'archived') {
+    await post(`/api/suppliers/${id}/archive`).send({}).expect(200);
+  }
+  return id;
 }
 
 /** Site > zone > bin, since only a bin may hold stock. */
@@ -121,7 +126,8 @@ beforeEach(async () => {
     db.stockLevels().deleteMany({}),
     db.purchaseOrders().deleteMany({}),
     db.counters().deleteMany({}),
-    db.getDb().collection('suppliers').deleteMany({}),
+    db.suppliers().deleteMany({}),
+    db.supplierItems().deleteMany({}),
     db.users().deleteMany({}),
     db.sessions().deleteMany({}),
   ]);
