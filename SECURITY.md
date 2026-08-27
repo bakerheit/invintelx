@@ -18,10 +18,16 @@ That opens a report visible only to the maintainers. It gives us a thread to ask
 you questions in, and it is the same object that becomes the published advisory
 once a fix exists.
 
-If you cannot use GitHub, open a public issue that contains **no detail at all**
-— a title of "Security report, requesting a private channel" and nothing else.
-No endpoint, no version, no reproduction. A maintainer will open a private
-advisory and invite you to it. Everything real goes in there.
+The same link is on the new-issue page, under **Security vulnerability**, so you
+do not have to find your way back here to use it.
+
+If you cannot use the advisory form at all, the fallback is a public issue that
+contains **no detail at all**. Blank issues are turned off, so you will be
+handed the bug report form: put "Security report, requesting a private channel"
+in *What happened* and leave everything optional empty. No endpoint, no version,
+no reproduction — the form asks, and for this one report you should decline to
+answer. A maintainer will open a private advisory and invite you to it, and
+everything real goes in there.
 
 ### What to include
 
@@ -92,10 +98,18 @@ Reported often enough to be worth stating, so nobody spends an evening on one:
   set to `production` (which is what turns on the `Secure` cookie flag), a
   `SESSION_SECRET` you published. The application cannot defend a deployment
   against its own settings.
-- **Rate limiting across multiple API instances.** The limiter is in-memory and
-  per-process, so two instances allow twice the quota. This is known, written
-  down, and tracked — running more than one API instance is not a supported
-  topology yet.
+- **The rate limiter's documented trades.** Sign-in and registration buckets are
+  fixed windows kept in MongoDB, so the quota belongs to the deployment rather
+  than to each process. Three consequences of that shape are deliberate and
+  argued in `apps/api/src/lib/rateLimit.ts`: a caller may spend a full quota at
+  the end of one window and another at the start of the next, which is what
+  fixed windows cost and is the intended trade for keeping a bucket one
+  document; a process that has already opened buckets for 10000 distinct
+  addresses inside one window refuses addresses it has not seen, because the key
+  is client-influenced and something has to bound how much storage a caller can
+  demand; and if MongoDB is unreachable the request fails rather than passing
+  uncounted, because a control that switches itself off when the database is in
+  trouble is off exactly when an attacker would want it off.
 - **A missing security header with no demonstrated impact.** Show the attack it
   would have stopped.
 - **Scanner output with no working proof of concept.** A tool's opinion is not a
