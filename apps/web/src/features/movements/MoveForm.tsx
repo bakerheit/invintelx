@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/features/auth/FormField';
 import { useItemStock } from '@/features/items/api';
 import { FormCard, FormError, NegativeStockNotice, PostedResult } from './FormParts';
+import { ItemScanner } from './ItemScanner';
 import { BinPicker, ItemPicker } from './pickers';
 import { applyServerErrors } from './formErrors';
 import { emptyMoveForm, moveFormSchema, type MoveFormValues } from './movementForms';
@@ -60,6 +61,7 @@ export function MoveForm({ kind }: { kind: 'receive' | 'issue' }) {
     reset,
     setValue,
     setError,
+    setFocus,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<MoveFormValues>({
@@ -89,6 +91,23 @@ export function MoveForm({ kind }: { kind: 'receive' | 'issue' }) {
   const chooseBin = (next: Location | null) => {
     setBin(next);
     setValue('locationId', next?.id ?? '', { shouldValidate: Boolean(next) });
+  };
+
+  /**
+   * A code has been read — nothing is known about it yet.
+   *
+   * The quantity goes now rather than on the way out: a scan starts a new line,
+   * whatever was half-typed against the last SKU is void, and the first
+   * characters of the scan itself land in this box on their way past. Clearing
+   * it only when the code resolves would leave that prefix behind on precisely
+   * the scans that failed, with the cursor still sitting after it.
+   */
+  const scanStarted = () => setValue('quantity', '');
+
+  /** It resolved, so the operator's hands are free for the number. */
+  const scanned = (next: Item) => {
+    chooseItem(next);
+    setFocus('quantity');
   };
 
   const onSubmit = handleSubmit(async (values) => {
@@ -125,6 +144,8 @@ export function MoveForm({ kind }: { kind: 'receive' | 'issue' }) {
   return (
     <FormCard title={copy.title} description={copy.description}>
       <form onSubmit={onSubmit} className="grid gap-4" noValidate>
+        <ItemScanner onItem={scanned} onScanStart={scanStarted} />
+
         <div className="grid gap-4 sm:grid-cols-2">
           <ItemPicker value={item} onChange={chooseItem} error={errors.itemId?.message} />
           <BinPicker value={bin} onChange={chooseBin} error={errors.locationId?.message} />

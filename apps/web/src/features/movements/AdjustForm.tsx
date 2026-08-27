@@ -15,6 +15,7 @@ import {
 import { FormField } from '@/features/auth/FormField';
 import { useItemStock } from '@/features/items/api';
 import { FormCard, FormError, NegativeStockNotice, PostedResult } from './FormParts';
+import { ItemScanner } from './ItemScanner';
 import { BinPicker, ItemPicker } from './pickers';
 import { applyServerErrors } from './formErrors';
 import {
@@ -50,6 +51,7 @@ export function AdjustForm() {
     reset,
     setValue,
     setError,
+    setFocus,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<AdjustFormValues>({
@@ -80,6 +82,14 @@ export function AdjustForm() {
   const chooseBin = (next: Location | null) => {
     setBin(next);
     setValue('locationId', next?.id ?? '', { shouldValidate: Boolean(next) });
+  };
+
+  /** See the notes in MoveForm: cleared on every attempt, not only the ones that resolve. */
+  const scanStarted = () => setValue('quantity', '');
+
+  const scanned = (next: Item) => {
+    chooseItem(next);
+    setFocus('quantity');
   };
 
   const onSubmit = handleSubmit(async (values) => {
@@ -119,6 +129,8 @@ export function AdjustForm() {
       description="Correct what the shelf says against what the ledger says, with a reason that can be totalled later."
     >
       <form onSubmit={onSubmit} className="grid gap-4" noValidate>
+        <ItemScanner onItem={scanned} onScanStart={scanStarted} />
+
         <div className="grid gap-4 sm:grid-cols-2">
           <ItemPicker value={item} onChange={chooseItem} error={errors.itemId?.message} />
           <BinPicker value={bin} onChange={chooseBin} error={errors.locationId?.message} />

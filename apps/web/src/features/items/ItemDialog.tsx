@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { UNITS_OF_MEASURE, type Item } from '@invintelx/shared';
@@ -23,10 +23,17 @@ interface ItemDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Present means edit, absent means create. */
   item?: Item | undefined;
+  /**
+   * Prefill for a new item. Its one caller is the scanner, handing back the code
+   * that resolved to nothing so nobody has to read it off the label and retype
+   * it — which is exactly the transcription error the scanner exists to avoid.
+   * Ignored when editing, where the item is the truth.
+   */
+  defaults?: Partial<ItemFormValues> | undefined;
   onSaved?: (item: Item) => void;
 }
 
-export function ItemDialog({ open, onOpenChange, item, onSaved }: ItemDialogProps) {
+export function ItemDialog({ open, onOpenChange, item, defaults, onSaved }: ItemDialogProps) {
   const createItem = useCreateItem();
   const updateItem = useUpdateItem();
   const isEdit = Boolean(item);
@@ -44,10 +51,15 @@ export function ItemDialog({ open, onOpenChange, item, onSaved }: ItemDialogProp
     defaultValues: emptyItemForm,
   });
 
+  // Read through a ref rather than depended on: callers pass an object literal,
+  // and a new identity every render would reset the form under the typist.
+  const defaultsRef = useRef(defaults);
+  defaultsRef.current = defaults;
+
   // Reset on open so a previously edited item's values never leak into the
   // next dialog the user opens.
   useEffect(() => {
-    if (open) reset(item ? itemToForm(item) : emptyItemForm);
+    if (open) reset(item ? itemToForm(item) : { ...emptyItemForm, ...defaultsRef.current });
   }, [open, item, reset]);
 
   const onSubmit = handleSubmit(async (values) => {
