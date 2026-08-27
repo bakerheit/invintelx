@@ -1,0 +1,391 @@
+{
+  "release": "0.1.0",
+  "schemaVersion": 1,
+  "note": "The database as the first release leaves it. Extended JSON: $oid is an ObjectId, $date a Date. Frozen — see README.md in this directory before changing anything here.",
+  "collections": {
+    "schemaVersion": [
+      {
+        "_id": "schema",
+        "version": 1,
+        "applied": [
+          {
+            "version": 1,
+            "name": "baseline",
+            "appliedAt": { "$date": "2026-07-02T08:00:00.000Z" },
+            "durationMs": 1
+          }
+        ],
+        "updatedAt": { "$date": "2026-07-02T08:00:00.000Z" },
+        "lock": null
+      }
+    ],
+    "users": [
+      {
+        "_id": { "$oid": "6600000000000000000000a1" },
+        "email": "operator@example.test",
+        "name": "Site Operator",
+        "passwordHash": "$argon2id$v=19$m=19456,t=2,p=1$ZmFrZXNhbHRmb3JhZml4dHVyZQ$bm90YXJlYWxoYXNoLWZpeHR1cmVvbmx5LXZhbHVl",
+        "role": "admin",
+        "createdAt": { "$date": "2026-07-02T08:05:00.000Z" },
+        "updatedAt": { "$date": "2026-07-02T08:05:00.000Z" }
+      }
+    ],
+    "locations": [
+      {
+        "_id": { "$oid": "6600000000000000000000b1" },
+        "code": "MAIN",
+        "name": "Main warehouse",
+        "type": "site",
+        "parentId": null,
+        "path": [{ "$oid": "6600000000000000000000b1" }],
+        "pathLabel": "MAIN",
+        "isActive": true,
+        "createdAt": { "$date": "2026-07-02T08:10:00.000Z" },
+        "updatedAt": { "$date": "2026-07-02T08:10:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "6600000000000000000000b2" },
+        "code": "RACK",
+        "name": "Racking",
+        "type": "zone",
+        "parentId": { "$oid": "6600000000000000000000b1" },
+        "path": [
+          { "$oid": "6600000000000000000000b1" },
+          { "$oid": "6600000000000000000000b2" }
+        ],
+        "pathLabel": "MAIN / RACK",
+        "isActive": true,
+        "createdAt": { "$date": "2026-07-02T08:11:00.000Z" },
+        "updatedAt": { "$date": "2026-07-02T08:11:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "6600000000000000000000b3" },
+        "code": "RACK-01",
+        "name": "Bin RACK-01",
+        "type": "bin",
+        "parentId": { "$oid": "6600000000000000000000b2" },
+        "path": [
+          { "$oid": "6600000000000000000000b1" },
+          { "$oid": "6600000000000000000000b2" },
+          { "$oid": "6600000000000000000000b3" }
+        ],
+        "pathLabel": "MAIN / RACK / RACK-01",
+        "isActive": true,
+        "createdAt": { "$date": "2026-07-02T08:12:00.000Z" },
+        "updatedAt": { "$date": "2026-07-02T08:12:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "6600000000000000000000b4" },
+        "code": "RACK-02",
+        "name": "Bin RACK-02",
+        "type": "bin",
+        "parentId": { "$oid": "6600000000000000000000b2" },
+        "path": [
+          { "$oid": "6600000000000000000000b1" },
+          { "$oid": "6600000000000000000000b2" },
+          { "$oid": "6600000000000000000000b4" }
+        ],
+        "pathLabel": "MAIN / RACK / RACK-02",
+        "isActive": true,
+        "createdAt": { "$date": "2026-07-02T08:13:00.000Z" },
+        "updatedAt": { "$date": "2026-07-02T08:13:00.000Z" }
+      }
+    ],
+    "items": [
+      {
+        "_id": { "$oid": "6600000000000000000000c1" },
+        "sku": "BOLT-M6-30",
+        "name": "Hex bolt M6 x 30mm",
+        "description": "",
+        "category": "Fasteners",
+        "unitOfMeasure": "each",
+        "barcode": "5010000001",
+        "unitCostCents": 12,
+        "unitPriceCents": 45,
+        "reorderPoint": 2000,
+        "reorderQuantity": 5000,
+        "status": "active",
+        "attributes": { "thread": "M6" },
+        "createdAt": { "$date": "2026-07-02T09:00:00.000Z" },
+        "updatedAt": { "$date": "2026-07-14T11:20:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "6600000000000000000000c2" },
+        "sku": "PVC-P-20",
+        "name": "PVC pipe 20mm x 3m",
+        "description": "Three metre length.",
+        "category": "Plumbing",
+        "unitOfMeasure": "each",
+        "barcode": "5010000002",
+        "unitCostCents": 340,
+        "unitPriceCents": 899,
+        "reorderPoint": 120,
+        "reorderQuantity": 300,
+        "status": "active",
+        "attributes": {},
+        "createdAt": { "$date": "2026-07-02T09:01:00.000Z" },
+        "updatedAt": { "$date": "2026-07-11T15:45:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "6600000000000000000000c3" },
+        "sku": "PAINT-WH-5L",
+        "name": "Matt emulsion white 5L",
+        "description": "",
+        "category": "Paint",
+        "unitOfMeasure": "each",
+        "barcode": "5010000003",
+        "unitCostCents": 1450,
+        "unitPriceCents": 3299,
+        "reorderPoint": 60,
+        "reorderQuantity": 150,
+        "status": "archived",
+        "attributes": {},
+        "createdAt": { "$date": "2026-07-02T09:02:00.000Z" },
+        "updatedAt": { "$date": "2026-07-20T10:00:00.000Z" }
+      }
+    ],
+    "suppliers": [
+      {
+        "_id": { "$oid": "6600000000000000000000d1" },
+        "code": "FIXFAST",
+        "name": "FixFast Fasteners",
+        "status": "active",
+        "contact": {
+          "name": "Dana Okoro",
+          "email": "sales@fixfast.example",
+          "phone": "0100 010 0101",
+          "website": "https://fixfast.example",
+          "address": "Unit 4, Bolt Road, Sheffield"
+        },
+        "paymentTerms": "net_30",
+        "currency": "USD",
+        "promisedLeadTimeDays": 7,
+        "notes": "",
+        "createdAt": { "$date": "2026-07-02T09:30:00.000Z" },
+        "updatedAt": { "$date": "2026-07-02T09:30:00.000Z" }
+      }
+    ],
+    "supplierItems": [
+      {
+        "_id": { "$oid": "6600000000000000000000e1" },
+        "supplierId": { "$oid": "6600000000000000000000d1" },
+        "itemId": { "$oid": "6600000000000000000000c1" },
+        "supplierSku": "FIX-1000",
+        "priceBreaks": [
+          { "minQuantity": 1, "unitPriceCents": 12 },
+          { "minQuantity": 10, "unitPriceCents": 11 },
+          { "minQuantity": 100, "unitPriceCents": 11 }
+        ],
+        "createdAt": { "$date": "2026-07-02T09:31:00.000Z" },
+        "updatedAt": { "$date": "2026-07-02T09:31:00.000Z" }
+      }
+    ],
+    "movements": [
+      {
+        "_id": { "$oid": "6600000000000000000000f1" },
+        "itemId": { "$oid": "6600000000000000000000c1" },
+        "itemSku": "BOLT-M6-30",
+        "itemName": "Hex bolt M6 x 30mm",
+        "locationId": { "$oid": "6600000000000000000000b3" },
+        "locationCode": "RACK-01",
+        "quantity": 500,
+        "type": "receipt",
+        "reference": "PO-1001",
+        "note": "",
+        "groupId": null,
+        "reversesId": null,
+        "reason": null,
+        "occurredAt": { "$date": "2026-07-03T10:00:00.000Z" },
+        "actorId": { "$oid": "6600000000000000000000a1" },
+        "actorName": "Site Operator",
+        "createdAt": { "$date": "2026-07-03T10:00:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "6600000000000000000000f2" },
+        "itemId": { "$oid": "6600000000000000000000c1" },
+        "itemSku": "BOLT-M6-30",
+        "itemName": "Hex bolt M6 x 30mm",
+        "locationId": { "$oid": "6600000000000000000000b3" },
+        "locationCode": "RACK-01",
+        "quantity": -120,
+        "type": "issue",
+        "reference": "",
+        "note": "",
+        "groupId": null,
+        "reversesId": null,
+        "reason": null,
+        "occurredAt": { "$date": "2026-07-06T14:30:00.000Z" },
+        "actorId": { "$oid": "6600000000000000000000a1" },
+        "actorName": "Site Operator",
+        "createdAt": { "$date": "2026-07-06T14:30:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "6600000000000000000000f3" },
+        "itemId": { "$oid": "6600000000000000000000c1" },
+        "itemSku": "BOLT-M6-30",
+        "itemName": "Hex bolt M6 x 30mm",
+        "locationId": { "$oid": "6600000000000000000000b3" },
+        "locationCode": "RACK-01",
+        "quantity": -5,
+        "type": "adjustment",
+        "reference": "",
+        "note": "Crushed in the aisle.",
+        "groupId": null,
+        "reversesId": null,
+        "reason": "damaged",
+        "occurredAt": { "$date": "2026-07-08T09:15:00.000Z" },
+        "actorId": { "$oid": "6600000000000000000000a1" },
+        "actorName": "Site Operator",
+        "createdAt": { "$date": "2026-07-08T09:15:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "6600000000000000000000f4" },
+        "itemId": { "$oid": "6600000000000000000000c1" },
+        "itemSku": "BOLT-M6-30",
+        "itemName": "Hex bolt M6 x 30mm",
+        "locationId": { "$oid": "6600000000000000000000b3" },
+        "locationCode": "RACK-01",
+        "quantity": -100,
+        "type": "transfer",
+        "reference": "",
+        "note": "",
+        "groupId": { "$oid": "6600000000000000000000f0" },
+        "reversesId": null,
+        "reason": null,
+        "occurredAt": { "$date": "2026-07-10T11:00:00.000Z" },
+        "actorId": { "$oid": "6600000000000000000000a1" },
+        "actorName": "Site Operator",
+        "createdAt": { "$date": "2026-07-10T11:00:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "6600000000000000000000f5" },
+        "itemId": { "$oid": "6600000000000000000000c1" },
+        "itemSku": "BOLT-M6-30",
+        "itemName": "Hex bolt M6 x 30mm",
+        "locationId": { "$oid": "6600000000000000000000b4" },
+        "locationCode": "RACK-02",
+        "quantity": 100,
+        "type": "transfer",
+        "reference": "",
+        "note": "",
+        "groupId": { "$oid": "6600000000000000000000f0" },
+        "reversesId": null,
+        "reason": null,
+        "occurredAt": { "$date": "2026-07-10T11:00:00.000Z" },
+        "actorId": { "$oid": "6600000000000000000000a1" },
+        "actorName": "Site Operator",
+        "createdAt": { "$date": "2026-07-10T11:00:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "6600000000000000000000f6" },
+        "itemId": { "$oid": "6600000000000000000000c2" },
+        "itemSku": "PVC-P-20",
+        "itemName": "PVC pipe 20mm x 3m",
+        "locationId": { "$oid": "6600000000000000000000b4" },
+        "locationCode": "RACK-02",
+        "quantity": 80,
+        "type": "receipt",
+        "reference": "PO-1002",
+        "note": "",
+        "groupId": null,
+        "reversesId": null,
+        "reason": null,
+        "occurredAt": { "$date": "2026-07-11T08:20:00.000Z" },
+        "actorId": { "$oid": "6600000000000000000000a1" },
+        "actorName": "Site Operator",
+        "createdAt": { "$date": "2026-07-11T08:20:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "6600000000000000000000f7" },
+        "itemId": { "$oid": "6600000000000000000000c2" },
+        "itemSku": "PVC-P-20",
+        "itemName": "PVC pipe 20mm x 3m",
+        "locationId": { "$oid": "6600000000000000000000b4" },
+        "locationCode": "RACK-02",
+        "quantity": -12,
+        "type": "issue",
+        "reference": "JOB-77",
+        "note": "",
+        "groupId": null,
+        "reversesId": null,
+        "reason": null,
+        "occurredAt": { "$date": "2026-07-12T13:05:00.000Z" },
+        "actorId": { "$oid": "6600000000000000000000a1" },
+        "actorName": "Site Operator",
+        "createdAt": { "$date": "2026-07-12T13:05:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "6600000000000000000000f8" },
+        "itemId": { "$oid": "6600000000000000000000c2" },
+        "itemSku": "PVC-P-20",
+        "itemName": "PVC pipe 20mm x 3m",
+        "locationId": { "$oid": "6600000000000000000000b4" },
+        "locationCode": "RACK-02",
+        "quantity": 12,
+        "type": "issue",
+        "reference": "JOB-77",
+        "note": "Issued against the wrong job.",
+        "groupId": null,
+        "reversesId": { "$oid": "6600000000000000000000f7" },
+        "reason": null,
+        "occurredAt": { "$date": "2026-07-12T16:40:00.000Z" },
+        "actorId": { "$oid": "6600000000000000000000a1" },
+        "actorName": "Site Operator",
+        "createdAt": { "$date": "2026-07-12T16:40:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "6600000000000000000000f9" },
+        "itemId": { "$oid": "6600000000000000000000c3" },
+        "itemSku": "PAINT-WH-5L",
+        "itemName": "Matt emulsion white 5L",
+        "locationId": { "$oid": "6600000000000000000000b3" },
+        "locationCode": "RACK-01",
+        "quantity": 40,
+        "type": "receipt",
+        "reference": "PO-1003",
+        "note": "",
+        "groupId": null,
+        "reversesId": null,
+        "reason": null,
+        "occurredAt": { "$date": "2026-07-13T07:55:00.000Z" },
+        "actorId": { "$oid": "6600000000000000000000a1" },
+        "actorName": "Site Operator",
+        "createdAt": { "$date": "2026-07-13T07:55:00.000Z" }
+      }
+    ],
+    "stockLevels": [
+      {
+        "_id": { "$oid": "66000000000000000000aa01" },
+        "itemId": { "$oid": "6600000000000000000000c1" },
+        "locationId": { "$oid": "6600000000000000000000b3" },
+        "locationCode": "RACK-01",
+        "onHand": 275,
+        "updatedAt": { "$date": "2026-07-10T11:00:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "66000000000000000000aa02" },
+        "itemId": { "$oid": "6600000000000000000000c1" },
+        "locationId": { "$oid": "6600000000000000000000b4" },
+        "locationCode": "RACK-02",
+        "onHand": 100,
+        "updatedAt": { "$date": "2026-07-10T11:00:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "66000000000000000000aa03" },
+        "itemId": { "$oid": "6600000000000000000000c2" },
+        "locationId": { "$oid": "6600000000000000000000b4" },
+        "locationCode": "RACK-02",
+        "onHand": 80,
+        "updatedAt": { "$date": "2026-07-12T16:40:00.000Z" }
+      },
+      {
+        "_id": { "$oid": "66000000000000000000aa04" },
+        "itemId": { "$oid": "6600000000000000000000c3" },
+        "locationId": { "$oid": "6600000000000000000000b3" },
+        "locationCode": "RACK-01",
+        "onHand": 40,
+        "updatedAt": { "$date": "2026-07-13T07:55:00.000Z" }
+      }
+    ]
+  }
+}

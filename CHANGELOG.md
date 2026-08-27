@@ -74,6 +74,17 @@ this release is on the only shape the data has ever had.
   non-zero if they disagree — which is what a dump taken without a consistent
   snapshot leaves behind. `pnpm db:rebuild` does that, recomputes, and checks
   again. See [docs/backup-and-restore.md](docs/backup-and-restore.md).
+- An answer to "may I skip versions", and a test that earns it. **Skipping is
+  allowed within a major version and not across one** — read `0.x` → `0.y` as
+  the major rule while this project is pre-`1.0.0`. Every released version's
+  database shape is kept as a frozen fixture; the upgrade suite restores each
+  one, runs the current build's migrations and index creation over it in a
+  single hop, and asserts that no document was lost, that no movement was
+  altered unless a migration declared it, and that every on-hand figure still
+  reconciles against the ledger it is derived from. It runs on every pull
+  request and again as its own gate on every release, which also refuses a
+  release that arrived without a fixture of its own. See
+  [docs/upgrading.md](docs/upgrading.md).
 - Licensed AGPL-3.0-or-later, with the section 13 source offer the licence
   requires wired into the running app via `VITE_SOURCE_URL`. Point it at your
   own source if you modify InvIntelX and serve it to other people.
@@ -88,9 +99,14 @@ this release is on the only shape the data has ever had.
   Stock left on an archived SKU is invisible on that screen.
 - No published container image and no `docker compose up` that runs the app —
   `docker-compose.yml` starts MongoDB for development and nothing else.
-- No upgrade has been exercised across a version boundary, because there is no
-  earlier version to exercise it from. Whether skipping versions will be
-  allowed is not decided yet.
+- The upgrade suite exercises the *database*: it restores a recorded shape and
+  runs the real migration runner and index creation over it. It does not stand
+  up the previous release's process and talk HTTP to it, because there is no
+  published image to stand up. Your data is proven to survive the new code; old
+  and new serving traffic side by side during a rolling deploy is not.
+- Being the first release, the only boundary anything has actually been carried
+  across is a database predating the migration mechanism arriving at schema
+  version 1. The fixture set is one release wide until there are two releases.
 - The restore procedure is documented and its final check is tested, but nobody
   has yet run it end to end against a real deployment. An untested backup is a
   belief; treat it as documented rather than proven.
