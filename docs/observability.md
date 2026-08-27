@@ -9,7 +9,7 @@ Written for whoever is on the end of a pager, not for whoever wrote the code.
 ## The health endpoint
 
 ```
-GET /health          → 200 {"status":"ok","version":"0.1.0","database":true,"uptimeSeconds":412}
+GET /health          → 200 {"status":"ok","version":"0.1.0","revision":"b43576b","database":true,"uptimeSeconds":412}
 GET /api/health      → the same handler, the same answer
 ```
 
@@ -25,6 +25,7 @@ still has to be able to answer it. Nothing in the response is a secret.
 | --- | --- |
 | `status` | `ok`, or `degraded` when the database is unreachable |
 | `version` | The release this process is running, from `apps/api/package.json` |
+| `revision` | The commit it was built from, or `unknown` — see below |
 | `database` | Whether a `ping` to Mongo just succeeded |
 | `uptimeSeconds` | Since this process started, not since the deploy |
 
@@ -32,6 +33,32 @@ still has to be able to answer it. Nothing in the response is a secret.
 polling it. A process that is listening but cannot read anything is not
 healthy; a probe that only checked the port would keep it in the load balancer.
 Configure the platform to take a 503 instance out of rotation.
+
+### Telling two deploys apart
+
+`version` is a tag, and consecutive deploys usually share one. That makes a
+smoke check able to prove the site is up but not that the deploy — or the
+rollback — took effect, which is the question actually being asked at the time.
+
+`revision` is the commit, and it answers that. Set `BUILD_REVISION` at build
+time from the same value the image stamps into
+`org.opencontainers.image.revision`; the deploy workflow already knows the sha.
+It is optional and never fatal, because an image built by hand has no sha to
+offer and refusing to boot over a cosmetic field would turn a missing label into
+an outage. Unset, or set to anything that is not a plausible build identifier
+(`[A-Za-z0-9._-]`, 64 characters or fewer), reports `unknown` rather than
+echoing it back — this response is published to anyone who can reach the
+endpoint.
+
+### The field names are a contract
+
+Two things outside this repository match on the response text rather than
+parsing it: the image's `HEALTHCHECK`, which fails the container on any non-2xx,
+and the container smoke job in CI, which greps the body for `"status":"ok"` and
+`"database":true` as literal substrings. Renaming a field, or answering
+`healthy` instead of `ok`, passes every unit test and fails the release.
+`apps/api/src/routes/health.contract.test.ts` asserts those exact substrings so
+that the break shows up in the suite instead.
 
 Each check costs one round trip to Mongo. It is mounted ahead of the session
 lookup, so a probe every three seconds does not become a session query every
@@ -225,7 +252,13 @@ The interface every call site uses — `logger.info(fields, msg)`,
 | --- | --- | --- |
 | `LOG_LEVEL` | `info` (`silent` in tests) | Lowest level written |
 | `LOG_FORMAT` | `json` in production, `pretty` elsewhere | How a line is rendered |
+| `BUILD_REVISION` | unset → `unknown` | The commit reported at `/health` |
 
-Both are validated at boot with everything else in
+The two logging variables are validated at boot with everything else in
 `apps/api/src/env.ts`: a bad value stops the process with a readable message
 rather than surfacing on whichever request touches it first.
+
+`BUILD_REVISION` deliberately does not work that way. It describes the build
+rather than configuring the process, so a malformed one is reported as `unknown`
+instead of stopping the boot — a broken label in a pipeline should cost you an
+answer at `/health`, not the instance.

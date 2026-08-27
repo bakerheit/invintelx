@@ -15,7 +15,7 @@ import { movementsRouter } from './routes/movements.js';
 import { suppliersRouter } from './routes/suppliers.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { webAssets } from './web.js';
-import { VERSION } from './version.js';
+import { REVISION, VERSION } from './version.js';
 
 export function createApp(): Express {
   const app = express();
@@ -107,11 +107,25 @@ export function createApp(): Express {
          * load balancer.
          */
         res.status(database ? 200 : 503).json({
+          /*
+           * Key names and values are a contract, not a presentation choice. The
+           * image's own HEALTHCHECK treats any 2xx as healthy, and the container
+           * smoke job in CI greps this body for `"status":"ok"` and
+           * `"database":true` literally. Renaming a field or changing `ok` to
+           * `healthy` passes every test in this repo and fails the release.
+           */
           status: database ? 'ok' : 'degraded',
           // Unauthenticated on purpose: "which version is this" is the first
           // question of every deployment bug report, and an operator who cannot
           // sign in still has to be able to answer it.
           version: VERSION,
+          /*
+           * And the second question, when the answer to the first is "the same
+           * version as before". A release is a tag; a deploy is a commit. Only
+           * this field can tell an operator whether the rollback they just ran
+           * is the code now serving traffic.
+           */
+          revision: REVISION,
           database,
           uptimeSeconds: Math.round(process.uptime()),
         });

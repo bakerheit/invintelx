@@ -81,6 +81,26 @@ describe('the health endpoint', () => {
     expect(response.body.version).toBe(VERSION);
   });
 
+  it('names the build it is running, not only the release', async () => {
+    /*
+     * The pair this exists for: a rollback that did not take. `version` is the
+     * tag and two consecutive deploys usually share one, so it cannot answer
+     * "is the machine running the code I just shipped". `revision` can.
+     * Nothing set BUILD_REVISION here, so the honest answer is `unknown` - and
+     * the field being present and honest is the contract, not the value.
+     */
+    const { REVISION } = await import('../version.js');
+    const response = await request(app).get('/health');
+    expect(response.body.revision).toBe(REVISION);
+    expect(response.body.revision).toBe('unknown');
+  });
+
+  it('reports both at both paths, because they are one handler', async () => {
+    const bare = await request(app).get('/health');
+    const prefixed = await request(app).get('/api/health');
+    expect(bare.body.revision).toBe(prefixed.body.revision);
+  });
+
   it('needs no session, because an operator locked out still has to ask', async () => {
     const response = await request(app).get('/health');
     expect(response.status).not.toBe(401);

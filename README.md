@@ -195,8 +195,10 @@ described.
 The API writes NDJSON to stdout, one line per request, with an id threaded
 through everything that request did — and passwords, session tokens and cookies
 stripped from every line before it is written. `/health` (and `/api/health`)
-answers 200 with the running version, or 503 when the database is unreachable,
-which is what makes it worth polling. Errors that nobody handled are collected
+answers 200 with the running version and the commit it was built from, or 503
+when the database is unreachable, which is what makes it worth polling — and the
+commit is what tells you a deploy or a rollback actually took, since two of them
+usually share a version. Errors that nobody handled are collected
 in one place on both sides of the wire: a crash in somebody's browser becomes a
 line in your log, carrying the request id of the API call that preceded it.
 

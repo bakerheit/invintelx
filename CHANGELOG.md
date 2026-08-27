@@ -79,7 +79,11 @@ this release is on the only shape the data has ever had.
 - A health endpoint worth polling, at `/health` and `/api/health` — two paths
   for one handler, because hosts differ and a probe misconfigured by one path
   segment reads as "the instance is down". It reports the running version, so a
-  bug report can say which release it is against, and answers **503 when the
+  bug report can say which release it is against, and the commit that version
+  was built from, so a deploy or a rollback can be seen to have taken effect —
+  two consecutive deploys usually share a version, and only the commit tells
+  them apart. Set `BUILD_REVISION` at build time to populate it; unset, it
+  reports `unknown` rather than guessing. It answers **503 when the
   database is unreachable**: a process that is listening but cannot read
   anything is not healthy, and a probe that only checked the port would keep it
   in the load balancer. Unauthenticated, because an operator who cannot sign in

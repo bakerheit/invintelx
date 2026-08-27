@@ -54,6 +54,13 @@ const envSchema = z.object({
    */
   SETUP_TOKEN: z.string().min(16, 'SETUP_TOKEN must be at least 16 characters').optional(),
 
+  /*
+   * BUILD_REVISION is deliberately absent from this schema, and is read in
+   * `version.ts` instead. Everything here shares one contract - a bad value
+   * stops the boot with a readable message - and that is exactly the wrong
+   * contract for a build label. See the note in `version.ts`.
+   */
+
   /**
    * Lowest level that gets written. `silent` in the test suite by default: the
    * API tests drive hundreds of requests through the real middleware stack, and
