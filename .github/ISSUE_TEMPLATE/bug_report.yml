@@ -1,0 +1,89 @@
+name: Bug report
+description: Something in InvIntelX does not behave the way it says it does.
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        One thing to get out of the way first: **invintelx.org is the only deployment
+        this project supports.** Self-hosting is allowed and documented, but a problem
+        with your own cluster, proxy, TLS or container runtime is not a bug in
+        InvIntelX and may go unanswered. A bug in the *software* — one that reproduces
+        on invintelx.org or in a dev checkout — is very welcome, whichever deployment
+        you happened to notice it on.
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Where did you see this?
+      options:
+        - invintelx.org (the hosted instance)
+        - A local dev checkout (pnpm dev)
+        - My own self-hosted deployment
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description:
+        A running instance reports its own version at `/api/health`. For invintelx.org,
+        leave this blank or say "hosted". For a dev checkout, the commit you are on is
+        fine.
+      placeholder: 'e.g. 0.3.1, or the commit sha'
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, including any error message in full.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce it
+      description:
+        Numbered steps from a signed-in session, please. `pnpm db:seed` loads the demo
+        dataset, so steps that start from that are the easiest to follow.
+      placeholder: |
+        1. Sign in as demo@invintelx.org
+        2. Go to Items and filter by ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description:
+        Browser and version, API logs, a screenshot — whatever you have. Please redact
+        anything private before pasting it.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you post
+      options:
+        - label: I searched the existing issues and this is not already reported.
+          required: true
+        - label:
+            This is a problem with InvIntelX itself, not with my own hosting setup — or
+            if I am not sure, I have said which above so it can be triaged.
+          required: true
+        - label:
+            I agree to follow this project's
+            [Code of Conduct](https://github.com/bakerheit/invintelx/blob/main/CODE_OF_CONDUCT.md).
+          required: true

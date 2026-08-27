@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { useAuth } from '@/features/auth/AuthProvider';
 import { NAV_ITEMS } from './nav';
 import { cn } from '@/lib/utils';
 
@@ -10,6 +11,7 @@ export function CommandPalette() {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -24,10 +26,14 @@ export function CommandPalette() {
 
   const results = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const available = NAV_ITEMS.filter((item) => !item.planned);
+    // Same rule as the sidebar: nothing offers to take you somewhere that will
+    // refuse you when you get there.
+    const available = NAV_ITEMS.filter(
+      (item) => !item.planned && (!item.adminOnly || user?.role === 'admin'),
+    );
     if (!needle) return available;
     return available.filter((item) => item.label.toLowerCase().includes(needle));
-  }, [query]);
+  }, [query, user?.role]);
 
   // A stale index after filtering would highlight a row that is no longer there.
   useEffect(() => setActiveIndex(0), [query]);

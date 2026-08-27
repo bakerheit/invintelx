@@ -57,6 +57,16 @@ this release is on the only shape the data has ever had.
   re-derived from its lines. Reversing one of those receipts takes the quantity
   back off the line in the same transaction, which can reopen a completed order.
   API only — `/api/purchase-orders` — with no screen yet.
+- An audit log for every change that is not a stock movement. The ledger already
+  records who moved stock and why; this records who changed a cost, a reorder
+  point, a supplier's terms, a location's status or an account's role, with the
+  value it held before and the value it took. Append-only, and written by the
+  same layer that performs the mutation and in the same transaction, so a write
+  that is refused leaves no entry and an entry cannot exist without its write.
+  Secrets are never valued: a password change is recorded as an event with no
+  before and no after. An item's own history appears on its detail page for
+  anybody who can read the item; the whole log is at `/audit` and via
+  `GET /api/audit` for administrators only.
 - Analytics over the ledger: demand series, days of cover, reorder suggestions
   and an action list of the items that need attention today.
 - A landing dashboard that ranks what needs a decision: SKUs that are out of
@@ -75,14 +85,37 @@ this release is on the only shape the data has ever had.
 - The API serves the built web app itself, so a production instance is one
   process on one origin. `WEB_DIST` overrides where it looks; pointing it at a
   directory with no `index.html` is a boot failure rather than a warning.
+- The web app is split by route, so a signed-out visitor downloads the login
+  screen rather than the whole product. First paint went from 231 kB to 150 kB
+  gzipped, which is the number that decides how long a warehouse tablet on bad
+  wifi stares at a blank page. Screens, and the vendor code only they use,
+  arrive when they are navigated to. The build now enforces a size budget and
+  fails if the bundle outgrows it.
 - `/api/health` reports the running version, so a bug report can say which
   release it is against.
+- Rate limits on sign-in and registration, counted in MongoDB against a TTL
+  index rather than in each process's memory. The quota is the deployment's, so
+  running a second API instance no longer doubles it — which is what running
+  more than one of them needed before it could be done safely. Each instance
+  opens buckets for at most 10000 distinct addresses per window, so the client
+  does not get to choose how much of the database it fills.
 - A documented backup and restore procedure, and a command that checks a restore
   rather than assuming it. `pnpm db:verify` recomputes every on-hand figure from
   the ledger and compares it with what is stored, writing nothing and exiting
   non-zero if they disagree — which is what a dump taken without a consistent
   snapshot leaves behind. `pnpm db:rebuild` does that, recomputes, and checks
   again. See [docs/backup-and-restore.md](docs/backup-and-restore.md).
+- An answer to "may I skip versions", and a test that earns it. **Skipping is
+  allowed within a major version and not across one** — read `0.x` → `0.y` as
+  the major rule while this project is pre-`1.0.0`. Every released version's
+  database shape is kept as a frozen fixture; the upgrade suite restores each
+  one, runs the current build's migrations and index creation over it in a
+  single hop, and asserts that no document was lost, that no movement was
+  altered unless a migration declared it, and that every on-hand figure still
+  reconciles against the ledger it is derived from. It runs on every pull
+  request and again as its own gate on every release, which also refuses a
+  release that arrived without a fixture of its own. See
+  [docs/upgrading.md](docs/upgrading.md).
 - Licensed AGPL-3.0-or-later, with the section 13 source offer the licence
   requires wired into the running app via `VITE_SOURCE_URL`. Point it at your
   own source if you modify InvIntelX and serve it to other people.
@@ -100,9 +133,14 @@ this release is on the only shape the data has ever had.
   Stock left on an archived SKU is invisible on that screen.
 - No published container image and no `docker compose up` that runs the app —
   `docker-compose.yml` starts MongoDB for development and nothing else.
-- No upgrade has been exercised across a version boundary, because there is no
-  earlier version to exercise it from. Whether skipping versions will be
-  allowed is not decided yet.
+- The upgrade suite exercises the *database*: it restores a recorded shape and
+  runs the real migration runner and index creation over it. It does not stand
+  up the previous release's process and talk HTTP to it, because there is no
+  published image to stand up. Your data is proven to survive the new code; old
+  and new serving traffic side by side during a rolling deploy is not.
+- Being the first release, the only boundary anything has actually been carried
+  across is a database predating the migration mechanism arriving at schema
+  version 1. The fixture set is one release wide until there are two releases.
 - The restore procedure is documented and its final check is tested, but nobody
   has yet run it end to end against a real deployment. An untested backup is a
   belief; treat it as documented rather than proven.

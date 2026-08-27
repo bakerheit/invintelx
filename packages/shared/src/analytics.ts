@@ -158,6 +158,128 @@ export const deadStockRowSchema = z.object({
 });
 export type DeadStockRow = z.infer<typeof deadStockRowSchema>;
 
+export const deadStockQuerySchema = z.object({
+  deadStockDays: z.coerce.number().int().min(7).max(730).default(DEFAULT_DEAD_STOCK_DAYS),
+  /**
+   * Higher than the dashboard's five. This is the full report somebody works
+   * through to free up capital, not the shortlist that says what to do today.
+   */
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+});
+export type DeadStockQuery = z.infer<typeof deadStockQuerySchema>;
+
+export const deadStockResponseSchema = z.object({
+  generatedAt: isoDateSchema,
+  deadStockDays: z.number().int(),
+  /** How many active SKUs were examined, so an empty report is not a mystery. */
+  itemsConsidered: z.number().int(),
+  /** How many qualify, which is not how many are listed. */
+  total: z.number().int(),
+  /** Capital tied up across every dead SKU, not only the listed ones. */
+  valueCents: z.number().int(),
+  rows: z.array(deadStockRowSchema),
+});
+export type DeadStockResponse = z.infer<typeof deadStockResponseSchema>;
+
+/**
+ * ABC: the Pareto split of a catalogue by what it consumes in a year.
+ *
+ * A is the handful of SKUs that account for most of the money going out of the
+ * door and so deserve tight control; C is the long tail where the cost of
+ * managing an item exceeds what managing it saves. B is what lies between.
+ */
+export const ABC_BANDS = ['A', 'B', 'C'] as const;
+export const abcBandSchema = z.enum(ABC_BANDS);
+export type AbcBand = z.infer<typeof abcBandSchema>;
+
+/**
+ * The conventional 80/95 cut: A up to 80% of annual consumption value, B up to
+ * 95%, C the rest. Percentages of *value*, never of item count — the whole
+ * point of the classification is that those two do not line up.
+ */
+export const DEFAULT_ABC_A_PERCENT = 80;
+export const DEFAULT_ABC_B_PERCENT = 95;
+
+/** A year, for annualising a window measured in days. Leap years are noise here. */
+export const DAYS_PER_YEAR = 365;
+
+/**
+ * One SKU's place in the ranking, with the arithmetic that put it there.
+ *
+ * Consumption, not stock. A pallet nobody touches has a large value on hand and
+ * an annual consumption value of zero, and belongs in C however much it cost —
+ * that is dead stock's question, and it is answered separately.
+ */
+export const abcRowSchema = z.object({
+  itemId: objectIdSchema,
+  sku: z.string(),
+  name: z.string(),
+  unitOfMeasure: z.string(),
+  band: abcBandSchema,
+  /** 1-based position in the descending value ranking. */
+  rank: z.number().int(),
+  unitCostCents: z.number().int(),
+  /** Units issued across the observed window. */
+  unitsIssued: z.number().int(),
+  /** unitsIssued extrapolated to a full year. Fractional on purpose. */
+  annualUnits: z.number(),
+  /** annualUnits x unit cost, in cents. The number the ranking is by. */
+  annualConsumptionValueCents: z.number().int(),
+  /** This SKU's share of the catalogue's annual consumption value, 0..1. */
+  valueShare: z.number(),
+  /** Share of total value accounted for by this row and every row above it. */
+  cumulativeValueShare: z.number(),
+});
+export type AbcRow = z.infer<typeof abcRowSchema>;
+
+/** One band in aggregate — the "20% of SKUs, 80% of spend" line, as numbers. */
+export const abcBandSummarySchema = z.object({
+  band: abcBandSchema,
+  itemCount: z.number().int(),
+  /** Share of the catalogue in this band, 0..1. */
+  itemShare: z.number(),
+  annualConsumptionValueCents: z.number().int(),
+  /** Share of annual consumption value in this band, 0..1. */
+  valueShare: z.number(),
+});
+export type AbcBandSummary = z.infer<typeof abcBandSummarySchema>;
+
+export const abcQuerySchema = z
+  .object({
+    windowDays: z.coerce.number().int().min(7).max(730).default(DEFAULT_DEMAND_WINDOW_DAYS),
+    aPercent: z.coerce.number().min(1).max(99).default(DEFAULT_ABC_A_PERCENT),
+    bPercent: z.coerce.number().min(1).max(100).default(DEFAULT_ABC_B_PERCENT),
+    /** Narrow to one band, so "show me my A items" is one request. */
+    band: abcBandSchema.optional(),
+    limit: z.coerce.number().int().min(1).max(500).default(100),
+  })
+  .refine((q) => q.bPercent > q.aPercent, {
+    path: ['bPercent'],
+    message: 'must be greater than aPercent',
+  });
+export type AbcQuery = z.infer<typeof abcQuerySchema>;
+
+export const abcResponseSchema = z.object({
+  generatedAt: isoDateSchema,
+  windowDays: z.number().int(),
+  aPercent: z.number(),
+  bPercent: z.number(),
+  /** How many active SKUs were classified. Every one of them has a band. */
+  itemsConsidered: z.number().int(),
+  /** The catalogue's annual consumption value, which the shares are shares of. */
+  annualConsumptionValueCents: z.number().int(),
+  /**
+   * Always three entries, A then B then C, counted across the whole catalogue
+   * rather than the returned page — a band summary that moved when somebody
+   * filtered would be worse than no summary at all.
+   */
+  bands: z.array(abcBandSummarySchema),
+  /** How many rows match the band filter, which is not how many are listed. */
+  total: z.number().int(),
+  rows: z.array(abcRowSchema),
+});
+export type AbcResponse = z.infer<typeof abcResponseSchema>;
+
 /** Units that moved on one UTC day, across every kind of movement. */
 export const volumePointSchema = z.object({
   /** YYYY-MM-DD, in UTC. */

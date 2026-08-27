@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
   itemDemandResponseSchema,
   itemImportPreviewSchema,
@@ -19,6 +19,21 @@ import { queryKeys } from '@/lib/queryKeys';
 /** The list screen's filter state, which is exactly the URL-backed table state. */
 export type ItemsQuery = TableParams;
 
+/**
+ * What goes stale when an item is written.
+ *
+ * Every write to an item now also appends to the audit log, so the trail on the
+ * detail page is downstream of the same mutations the item itself is. Keeping
+ * the pair in one function is what stops the next mutation from remembering one
+ * and forgetting the other.
+ */
+function invalidateAfterWrite(queryClient: QueryClient): Promise<void> {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.items.all }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.audit.all }),
+  ]).then(() => undefined);
+}
+
 export function useItems(query: ItemsQuery) {
   return useQuery({
     queryKey: queryKeys.items.list(query),
@@ -35,7 +50,7 @@ export function useCreateItem() {
   return useMutation({
     mutationFn: (input: CreateItemInput) =>
       apiRequest(itemSchema, '/items', { method: 'POST', body: input }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.items.all }),
+    onSuccess: () => invalidateAfterWrite(queryClient),
   });
 }
 
@@ -44,7 +59,7 @@ export function useUpdateItem() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateItemInput }) =>
       apiRequest(itemSchema, `/items/${id}`, { method: 'PATCH', body: input }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.items.all }),
+    onSuccess: () => invalidateAfterWrite(queryClient),
   });
 }
 
@@ -53,7 +68,7 @@ export function useArchiveItem() {
   return useMutation({
     mutationFn: (item: Item) =>
       apiRequest(itemSchema, `/items/${item.id}/archive`, { method: 'POST' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.items.all }),
+    onSuccess: () => invalidateAfterWrite(queryClient),
   });
 }
 
@@ -62,7 +77,7 @@ export function useRestoreItem() {
   return useMutation({
     mutationFn: (item: Item) =>
       apiRequest(itemSchema, `/items/${item.id}/restore`, { method: 'POST' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.items.all }),
+    onSuccess: () => invalidateAfterWrite(queryClient),
   });
 }
 
@@ -86,7 +101,7 @@ export function useCommitImport() {
   return useMutation({
     mutationFn: (input: ItemImportRequest) =>
       apiRequest(itemImportResultSchema, '/items/import', { method: 'POST', body: input }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.items.all }),
+    onSuccess: () => invalidateAfterWrite(queryClient),
   });
 }
 
@@ -101,6 +116,21 @@ export function itemsExportHref(query: Pick<ItemsQuery, 'q' | 'category' | 'stat
     category: query.category,
     status: query.status,
   })}`;
+}
+
+/**
+ * One scanned code to one item.
+ *
+ * A mutation rather than a query, for the same reason the import preview is:
+ * it is an imperative answer to a thing that just happened in the aisle, not a
+ * piece of state a screen renders. Caching it would also mean a code that
+ * resolved to nothing keeps resolving to nothing after somebody creates the
+ * item it was missing.
+ */
+export function useItemLookup() {
+  return useMutation({
+    mutationFn: (code: string) => apiRequest(itemSchema, `/items/lookup${toQueryString({ code })}`),
+  });
 }
 
 export function useItem(id: string) {

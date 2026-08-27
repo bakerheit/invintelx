@@ -1,6 +1,7 @@
 import {
   outstandingQuantity,
   purchaseOrderTotalCents,
+  type AuditEntry,
   type Item,
   type Location,
   type Movement,
@@ -12,6 +13,7 @@ import {
   type SupplierItem,
 } from '@invintelx/shared';
 import type {
+  AuditEntryDoc,
   ItemDoc,
   LocationDoc,
   MovementDoc,
@@ -181,6 +183,25 @@ export function toPurchaseOrder(doc: PurchaseOrderDoc): PurchaseOrder {
     closedAt: doc.closedAt ? doc.closedAt.toISOString() : null,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * The changes are copied rather than passed through: the stored array is the
+ * record, and handing the same object to a response body is how a mapper
+ * eventually becomes a place values get mutated on their way out.
+ */
+export function toAuditEntry(doc: AuditEntryDoc): AuditEntry {
+  return {
+    id: doc._id.toHexString(),
+    actorId: doc.actorId.toHexString(),
+    actorName: doc.actorName,
+    action: doc.action,
+    entityType: doc.entityType,
+    entityId: doc.entityId.toHexString(),
+    entityLabel: doc.entityLabel,
+    changes: doc.changes.map((change) => ({ ...change })),
+    createdAt: doc.createdAt.toISOString(),
   };
 }
 

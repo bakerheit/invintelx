@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { ObjectId, type Filter } from 'mongodb';
+import { z } from 'zod';
 import {
   createItemInputSchema,
   CsvParseError,
@@ -18,9 +19,11 @@ import {
 } from '@invintelx/shared';
 import { items, type ItemDoc } from '../db.js';
 import { BadRequestError, NotFoundError } from '../errors.js';
+import { actorOf } from '../lib/actor.js';
 import { asyncHandler, parseOrThrow } from '../lib/http.js';
 import { requireRole } from '../middleware/auth.js';
 import { toItem } from '../serializers.js';
+import { auditedInsert, auditedUpdate, ITEM_AUDIT } from '../services/audit.js';
 import { applyItemImport, loadExistingBySku, MAX_IMPORT_ROWS } from '../services/itemImport.js';
 
 export const itemsRouter: Router = Router();
@@ -133,6 +136,67 @@ itemsRouter.get(
 );
 
 /**
+ * One code in, one item out — what a barcode scanner needs.
+ *
+ * Deliberately not the `q` search: that one matches substrings across name as
+ * well, which is right for somebody typing and wrong for a machine. A scanner
+ * has read a complete code and the only honest answers are "this item" or
+ * "nothing", because picking the first of eleven partial matches is how the
+ * wrong SKU gets stock booked against it.
+ *
+ * Registered before `/:id` for the same reason `export.csv` is.
+ */
+const lookupQuerySchema = z.object({
+  code: z.string().trim().min(1, 'A code is required').max(64),
+});
+
+/** How many exact matches to pull before choosing. SKU is unique; barcode is not. */
+const MAX_LOOKUP_CANDIDATES = 10;
+
+itemsRouter.get(
+  '/lookup',
+  asyncHandler(async (req, res) => {
+    const { code } = parseOrThrow(lookupQuerySchema, req.query);
+    // SKUs are stored uppercased, so the comparison has to be too — a scanner
+    // that reports lower case is otherwise an unrecognised code.
+    const sku = code.toUpperCase();
+
+    /*
+     * Sorted, because the choice below ends in `docs[0]` and an unsorted find
+     * makes that "whatever Mongo returned first" — which is the thing the
+     * ordering exists to avoid. It also decides the candidates: without a sort
+     * the `limit` keeps an arbitrary ten, so an active item could be left out
+     * of a set of eleven and lose to an archived one.
+     *
+     * `status` first and ascending is not incidental: 'active' sorts before
+     * 'archived', so the live items are the ones the limit is guaranteed to
+     * keep. `sku` breaks the remaining tie between two active items sharing a
+     * supplier barcode — arbitrary either way, but the same arbitrary answer
+     * every time, which is what an operator scanning the same label twice
+     * needs. A unique index on barcode is the real fix and a data decision
+     * nobody has taken yet; see the finding on INVX-62.
+     */
+    const docs = await items()
+      .find({ $or: [{ sku }, { barcode: code }] })
+      .sort({ status: 1, sku: 1 })
+      .limit(MAX_LOOKUP_CANDIDATES)
+      .toArray();
+
+    // Active beats archived, and a SKU hit beats a barcode hit.
+    const match =
+      docs.find((doc) => doc.status === 'active' && doc.sku === sku) ??
+      docs.find((doc) => doc.status === 'active') ??
+      docs.find((doc) => doc.sku === sku) ??
+      docs[0];
+
+    // Archived items come back rather than 404ing. The caller needs to say
+    // "that SKU is archived" instead of offering to create a duplicate of it.
+    if (!match) throw new NotFoundError(`No item has the SKU or barcode ${code}`);
+    res.json(toItem(match));
+  }),
+);
+
+/**
  * Turn the request into a plan, or into the right refusal.
  *
  * A file that is not CSV takes the whole upload down with it, because there is
@@ -196,7 +260,7 @@ itemsRouter.post(
       );
     }
 
-    res.json(await applyItemImport(plan));
+    res.json(await applyItemImport(plan, actorOf(req)));
   }),
 );
 
@@ -223,8 +287,10 @@ itemsRouter.post(
       updatedAt: now,
     };
     // A duplicate SKU surfaces as a 11000 from the unique index and the error
-    // middleware turns it into a 409, so no pre-check race window here.
-    await items().insertOne(doc);
+    // middleware turns it into a 409, so no pre-check race window here. The
+    // audit entry is written in the same transaction, so a refused insert
+    // cannot leave a record of an item that does not exist.
+    await auditedInsert(ITEM_AUDIT, doc, actorOf(req));
     res.status(201).json(toItem(doc));
   }),
 );
@@ -234,10 +300,11 @@ itemsRouter.patch(
   requireRole('member'),
   asyncHandler(async (req, res) => {
     const input = parseOrThrow(updateItemInputSchema, req.body);
-    const doc = await items().findOneAndUpdate(
+    const doc = await auditedUpdate(
+      ITEM_AUDIT,
       { _id: parseId(req.params.id) },
-      { $set: { ...input, updatedAt: new Date() } },
-      { returnDocument: 'after' },
+      input,
+      actorOf(req),
     );
     if (!doc) throw new NotFoundError('No item with that id');
     res.json(toItem(doc));
@@ -253,10 +320,12 @@ itemsRouter.post(
   '/:id/archive',
   requireRole('member'),
   asyncHandler(async (req, res) => {
-    const doc = await items().findOneAndUpdate(
+    const doc = await auditedUpdate(
+      ITEM_AUDIT,
       { _id: parseId(req.params.id) },
-      { $set: { status: 'archived', updatedAt: new Date() } },
-      { returnDocument: 'after' },
+      { status: 'archived' },
+      actorOf(req),
+      { action: 'archive' },
     );
     if (!doc) throw new NotFoundError('No item with that id');
     res.json(toItem(doc));
@@ -267,10 +336,12 @@ itemsRouter.post(
   '/:id/restore',
   requireRole('member'),
   asyncHandler(async (req, res) => {
-    const doc = await items().findOneAndUpdate(
+    const doc = await auditedUpdate(
+      ITEM_AUDIT,
       { _id: parseId(req.params.id) },
-      { $set: { status: 'active', updatedAt: new Date() } },
-      { returnDocument: 'after' },
+      { status: 'active' },
+      actorOf(req),
+      { action: 'restore' },
     );
     if (!doc) throw new NotFoundError('No item with that id');
     res.json(toItem(doc));

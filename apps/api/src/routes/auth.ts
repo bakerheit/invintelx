@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { ObjectId } from 'mongodb';
 import { loginInputSchema, registerInputSchema } from '@invintelx/shared';
-import { sessions, users } from '../db.js';
+import { sessions, users, type UserDoc } from '../db.js';
 import { isTest } from '../env.js';
 import { ConflictError, ForbiddenError, UnauthorizedError } from '../errors.js';
 import { asyncHandler, parseOrThrow } from '../lib/http.js';
@@ -18,17 +18,24 @@ import {
 } from '../lib/session.js';
 import { requireAuth } from '../middleware/auth.js';
 import { toPublicUser } from '../serializers.js';
+import { auditedInsert, USER_AUDIT } from '../services/audit.js';
 
 export const authRouter: Router = Router();
 
 const loginLimiter = createRateLimiter({
+  name: 'login',
   limit: 10,
   windowMs: 15 * 60 * 1000,
   message: 'Too many sign-in attempts. Try again in a few minutes.',
   enabled: !isTest,
 });
 
-const registerLimiter = createRateLimiter({ limit: 5, windowMs: 60 * 60 * 1000, enabled: !isTest });
+const registerLimiter = createRateLimiter({
+  name: 'register',
+  limit: 5,
+  windowMs: 60 * 60 * 1000,
+  enabled: !isTest,
+});
 
 async function startSession(userId: ObjectId) {
   const token = generateSessionToken();
@@ -58,7 +65,7 @@ authRouter.get(
 authRouter.post(
   '/register',
   asyncHandler(async (req, res) => {
-    registerLimiter(req.ip ?? 'unknown');
+    await registerLimiter(req.ip ?? 'unknown');
     const input = parseOrThrow(registerInputSchema, req.body);
 
     const existing = await users().findOne({ email: input.email });
@@ -91,7 +98,7 @@ authRouter.post(
 
     const now = new Date();
 
-    const doc = {
+    const doc: UserDoc = {
       _id: new ObjectId(),
       email: input.email,
       name: input.name,
@@ -100,7 +107,16 @@ authRouter.post(
       createdAt: now,
       updatedAt: now,
     };
-    await users().insertOne(doc);
+    /*
+     * Audited, and the actor is the account itself: nobody else exists to
+     * attribute a self-registration to. What matters here is the role — an
+     * instance's first account is its administrator, and "who made this person
+     * an admin" being answerable from the first row is the point.
+     *
+     * The password hash is on the redaction list, so the entry records that the
+     * field was set and nothing about what it was set to.
+     */
+    await auditedInsert(USER_AUDIT, doc, { actorId: doc._id, actorName: doc.name });
 
     const { token, expiresAt } = await startSession(doc._id);
     setSessionCookie(res, token, expiresAt);
@@ -111,7 +127,7 @@ authRouter.post(
 authRouter.post(
   '/login',
   asyncHandler(async (req, res) => {
-    loginLimiter(req.ip ?? 'unknown');
+    await loginLimiter(req.ip ?? 'unknown');
     const input = parseOrThrow(loginInputSchema, req.body);
 
     const user = await users().findOne({ email: input.email });

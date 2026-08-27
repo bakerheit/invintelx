@@ -1,6 +1,9 @@
 import { MongoClient, ObjectId, type Collection, type Db } from 'mongodb';
 import type {
   AdjustmentReason,
+  AuditAction,
+  AuditChange,
+  AuditEntityType,
   ItemStatus,
   LocationType,
   MovementType,
@@ -47,6 +50,28 @@ export interface SetupTokenDoc {
 }
 
 export const SETUP_TOKEN_ID = 'setup';
+
+/**
+ * One fixed window of one rate limiter, for one key.
+ *
+ * Shared by every API instance, which is the whole point: buckets in process
+ * memory give each instance the full quota, so the effective limit multiplies by
+ * the number of instances. The `_id` carries the limiter name, the window and
+ * the key, so a window is a document and counting is a single atomic `$inc`
+ * rather than a read followed by a write.
+ *
+ * The key is a client IP. It is written as it arrives rather than hashed —
+ * hashing a 32-bit address protects nothing, the whole space is enumerable —
+ * and the TTL index removes the document once its window has passed, so no
+ * address outlives the window it was seen in.
+ */
+export interface RateLimitDoc {
+  /** `${name}:${windowStart}:${key}` */
+  _id: string;
+  count: number;
+  /** End of the window. Also what the TTL index sweeps on. */
+  expiresAt: Date;
+}
 
 /** One migration that has run, kept forever so the history is readable. */
 export interface AppliedMigrationDoc {
@@ -227,6 +252,33 @@ export interface MovementDoc {
 }
 
 /**
+ * One edit that was not a movement.
+ *
+ * Append-only, like the ledger and for the same reason: a record that can be
+ * amended is a record whose contents are an opinion. Nothing in this codebase
+ * updates or deletes one of these, and `services/audit.ts` is the only thing
+ * that writes them.
+ */
+export interface AuditEntryDoc {
+  _id: ObjectId;
+  actorId: ObjectId;
+  /** As it stood at the time. Renaming a user must not rewrite their history. */
+  actorName: string;
+  action: AuditAction;
+  entityType: AuditEntityType;
+  entityId: ObjectId;
+  /** SKU, code, email — whatever names this entity to a person reading the feed. */
+  entityLabel: string;
+  /**
+   * Values are JSON-safe: ids as hex, dates as ISO. Storing them as BSON would
+   * mean the shape of a stored value depended on which field it came from, and
+   * a value here is only ever displayed, never queried on.
+   */
+  changes: AuditChange[];
+  createdAt: Date;
+}
+
+/**
  * Projection of the ledger, never authored directly. rebuildStockLevels
  * recomputes it from movements, which is what makes it verifiable rather than
  * merely trusted.
@@ -274,6 +326,8 @@ export const users = (): Collection<UserDoc> => getDb().collection<UserDoc>('use
 export const sessions = (): Collection<SessionDoc> => getDb().collection<SessionDoc>('sessions');
 export const setupTokens = (): Collection<SetupTokenDoc> =>
   getDb().collection<SetupTokenDoc>('setupTokens');
+export const rateLimits = (): Collection<RateLimitDoc> =>
+  getDb().collection<RateLimitDoc>('rateLimits');
 export const items = (): Collection<ItemDoc> => getDb().collection<ItemDoc>('items');
 export const locations = (): Collection<LocationDoc> => getDb().collection<LocationDoc>('locations');
 export const suppliers = (): Collection<SupplierDoc> => getDb().collection<SupplierDoc>('suppliers');
@@ -285,6 +339,8 @@ export const purchaseOrders = (): Collection<PurchaseOrderDoc> =>
 export const counters = (): Collection<CounterDoc> => getDb().collection<CounterDoc>('counters');
 export const stockLevels = (): Collection<StockLevelDoc> =>
   getDb().collection<StockLevelDoc>('stockLevels');
+export const auditEntries = (): Collection<AuditEntryDoc> =>
+  getDb().collection<AuditEntryDoc>('auditEntries');
 export const schemaVersion = (): Collection<SchemaVersionDoc> =>
   getDb().collection<SchemaVersionDoc>('schemaVersion');
 
@@ -301,6 +357,18 @@ export async function ensureIndexes(): Promise<void> {
   // Mongo's TTL monitor deletes expired sessions on its own sweep, so nothing
   // in the app has to remember to clean up.
   await sessions().createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'ttl_expires' });
+
+  /*
+   * The limiter itself never deletes a bucket. Every document here is garbage
+   * the moment its window ends, and Mongo's TTL monitor is what collects it —
+   * which is also why the limiter can be stateless across instances.
+   *
+   * The sweep runs about once a minute, so a spent bucket outlives its window by
+   * up to that long. That costs a little space and nothing else: the window is
+   * part of the `_id`, so a request in a new window never lands on an old
+   * bucket whether or not the sweep has got to it yet.
+   */
+  await rateLimits().createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'ttl_expires' });
 
   await items().createIndex({ sku: 1 }, { unique: true, name: 'uniq_sku' });
   await items().createIndex({ status: 1, updatedAt: -1 }, { name: 'by_status_updated' });
@@ -376,6 +444,17 @@ export async function ensureIndexes(): Promise<void> {
     { unique: true, name: 'uniq_item_location' },
   );
   await stockLevels().createIndex({ itemId: 1 }, { name: 'by_item' });
+
+  // "What happened to this item" — the trail on a detail page — is one entity's
+  // rows newest first, so the sort has to be part of the index.
+  await auditEntries().createIndex(
+    { entityType: 1, entityId: 1, createdAt: -1 },
+    { name: 'by_entity_created' },
+  );
+  // The admin feed, unfiltered and with each of its filters.
+  await auditEntries().createIndex({ createdAt: -1 }, { name: 'by_created' });
+  await auditEntries().createIndex({ actorId: 1, createdAt: -1 }, { name: 'by_actor_created' });
+  await auditEntries().createIndex({ action: 1, createdAt: -1 }, { name: 'by_action_created' });
 }
 
 interface LedgerTotal {

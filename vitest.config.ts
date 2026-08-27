@@ -11,6 +11,10 @@ export default defineConfig({
     include: [
       'packages/*/src/**/*.test.{ts,tsx}',
       'apps/*/src/**/*.test.{ts,tsx}',
+      // Build tooling. The web bundle's size budget fails CI when it is
+      // breached, so what it measures is worth pinning down here rather than
+      // arguing about in a pull request it has just blocked.
+      'apps/*/build-config/**/*.test.ts',
       // Release tooling. It decides whether a tag gets published, so the rules
       // it enforces are tested here rather than discovered by a bad release.
       'scripts/**/*.test.mjs',

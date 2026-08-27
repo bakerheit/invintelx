@@ -66,7 +66,15 @@ entry there is part of the pull request, not a chore for whoever releases next.
    empty `## [Unreleased]` above it with `### Breaking` and `### Migrations`
    set to `_None._`.
 
-4. **Check it before you tag:**
+4. **Record the shape this release leaves behind.** Add
+   `apps/api/src/migrations/fixtures/v1.2.3.json`: a small database exactly as this version stores
+   it, including whatever its own migrations did. That file is what the *next* release's upgrade is
+   proven against, and it is frozen the moment this tag exists —
+   [the fixtures README](../apps/api/src/migrations/fixtures/README.md) says why editing one later
+   is worse than useless. The release workflow refuses a version with no fixture, so this is not a
+   step that can be skipped and remembered next time.
+
+5. **Check it before you tag:**
 
    ```bash
    pnpm release:check v1.2.3
@@ -78,7 +86,7 @@ entry there is part of the pull request, not a chore for whoever releases next.
    migrates. On success it prints the notes that will be published and the image
    tags that will be pushed.
 
-5. **Merge to `main`** through the normal review, then tag the merge commit:
+6. **Merge to `main`** through the normal review, then tag the merge commit:
 
    ```bash
    git checkout main && git pull
@@ -101,9 +109,16 @@ completely or does not happen:
    and answers both mandatory questions.
 2. **verify** — typecheck, lint, test and build, by calling the CI workflow
    itself rather than a copy of it. A tag that does not build is not a release.
-3. **image** — builds and pushes to `ghcr.io/<owner>/invintelx`, tagged with the
+3. **upgrade** — restores the database as every previously released version left
+   it, runs this tag's migrations over each one, and checks nothing was lost and
+   that on-hand still reconciles against the ledger. Also fails when this
+   release arrived without a fixture of its own. `verify` runs the same
+   assertions inside `pnpm test`; this repeats them as a named gate, because a
+   broken upgrade is the one failure that must not arrive as a line buried in a
+   test log. See [upgrading.md](upgrading.md).
+4. **image** — builds and pushes to `ghcr.io/<owner>/invintelx`, tagged with the
    version and, for a real release, the rolling `:1.2`, `:1` and `:latest`.
-4. **publish** — creates the GitHub release using the changelog section
+5. **publish** — creates the GitHub release using the changelog section
    verbatim as its notes, marked as a pre-release when the version says so.
 
 Nothing here force-pushes a tag or moves one. A published version is immutable:
@@ -120,7 +135,13 @@ So today a release means "a tag, a changelog entry, and a GitHub release you can
 build from source". It does not yet mean "an image you can pull", and the
 changelog's *Known limitations* says so.
 
-Two other things a supported upgrade path needs are also not here yet: schema
-migrations with a recorded database version, and an upgrade exercised in CI
-across a real version boundary. Until that second one exists, whether skipping
-versions is allowed is undecided — and undecided means do not skip.
+The other two things a supported upgrade path needs are here. Schema migrations
+record what shape a database is in and refuse to run against one they do not
+understand ([migrations.md](migrations.md)), and the upgrade itself is exercised
+on every release rather than described — every released shape, restored and put
+through this tag's migrations, with the data checked afterwards.
+
+Which settles the question that used to sit here: **skipping versions is
+allowed within a major and not across one.** [upgrading.md](upgrading.md) is
+that answer in full, and it is the page to send somebody who asks how to move
+between two versions.

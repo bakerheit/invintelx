@@ -68,7 +68,7 @@ export function AppShell() {
         </div>
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
-          {NAV_ITEMS.map((item) =>
+          {NAV_ITEMS.filter((item) => !item.adminOnly || user?.role === 'admin').map((item) =>
             item.planned ? (
               <div
                 key={item.to}

@@ -11,7 +11,8 @@ import {
   updatePurchaseOrderInputSchema,
 } from '@invintelx/shared';
 import { purchaseOrders, type PurchaseOrderDoc } from '../db.js';
-import { NotFoundError, UnauthorizedError } from '../errors.js';
+import { NotFoundError } from '../errors.js';
+import { actorOf } from '../lib/actor.js';
 import { asyncHandler, parseOrThrow } from '../lib/http.js';
 import { requireRole } from '../middleware/auth.js';
 import {
@@ -30,11 +31,6 @@ function parseId(raw: unknown): ObjectId {
   const parsed = objectIdSchema.safeParse(raw);
   if (!parsed.success) throw new NotFoundError('No purchase order with that id');
   return new ObjectId(parsed.data);
-}
-
-function actorOf(req: { user?: { id: string; name: string } }) {
-  if (!req.user) throw new UnauthorizedError();
-  return { actorId: new ObjectId(req.user.id), actorName: req.user.name };
 }
 
 function escapeRegex(value: string): string {

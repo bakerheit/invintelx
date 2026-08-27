@@ -4,6 +4,7 @@ import { env, isProduction } from './env.js';
 import { healthcheck } from './db.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
 import { loadUser, requireAuth } from './middleware/auth.js';
+import { auditRouter } from './routes/audit.js';
 import { authRouter } from './routes/auth.js';
 import { itemsRouter } from './routes/items.js';
 import { locationsRouter } from './routes/locations.js';
@@ -97,6 +98,7 @@ export function createApp(): Express {
   app.use('/api/suppliers', requireAuth, suppliersRouter);
   app.use('/api/purchase-orders', requireAuth, purchaseOrdersRouter);
   app.use('/api/analytics', requireAuth, analyticsRouter);
+  app.use('/api/audit', requireAuth, auditRouter);
 
   // Last chance before the 404: a client-side route that survives a refresh.
   app.use(web.spaFallback);
