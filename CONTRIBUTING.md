@@ -9,6 +9,9 @@ There are two forms: a bug report and a feature request. Both ask which
 deployment you saw it on, and that question is doing real work — see
 [Scope](#scope) at the bottom. Please do not open a public issue for a security
 problem; report it privately instead, using the link on the new-issue page.
+[SECURITY.md](SECURITY.md) is that route written out: what to put in a report,
+what happens after you send one, and the things that are documented behaviour
+rather than vulnerabilities.
 
 ## Getting set up
 
@@ -181,6 +184,16 @@ differently:
 - **A problem with your deployment** — the container will not start, the cookie
   is not being sent through your proxy, your cluster does something unusual — is
   not a bug in InvIntelX, and may get no answer.
+
+Unsupported is not the same as undocumented, and the pages exist even though the
+promise does not. [docs/deployment.md](docs/deployment.md) is what an instance
+needs around it — TLS, the proxy, the cookies, the health probe.
+[docs/configuration.md](docs/configuration.md) is every environment variable and
+what a wrong value looks like from the outside, generated from the Zod schema the
+API boots against. [docs/support-policy.md](docs/support-policy.md) draws the
+line above in more detail, including what is out of scope no matter where you saw
+it. A patch that makes any of those truer is welcome on the same terms as a code
+change.
 
 That is why the issue forms ask which deployment you saw it on. Answer it
 honestly rather than tactically; an answer of "my own self-hosted deployment"
