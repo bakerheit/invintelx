@@ -146,6 +146,13 @@ Set `WEB_ORIGIN` to the public URL of the instance, and `NODE_ENV=production`,
 which is what turns on the `Secure` flag for the session cookie and makes the
 API trust one layer of `X-Forwarded-For` for rate-limiting.
 
+`NODE_ENV=production` also makes `MONGODB_DB` required rather than defaulting to
+`invintelx`. Two instances of the same build against one cluster — a production
+one and a staging one — are separated by nothing but that name, so it has to be
+said out loud rather than fallen back on. `apps/api/src/env.ts` is the list of
+what is required and what shape each variable has to be; a bad one stops the boot
+with every problem printed at once.
+
 Static files are served with cache headers that assume a Vite build: the hashed
 files under `assets/` are immutable and cached for a year, while `index.html`
 and anything else keeping its name across releases is revalidated every time —
@@ -204,6 +211,12 @@ the compose volume lives and why you should not copy it, and the restore
 walkthrough that ends at the check above. It is written and checked but not yet
 proven: nobody has run it end to end against a real deployment, and the page says
 so at the top until somebody has.
+
+If your database is a hosted cluster rather than one you run, the snapshots are
+the provider's job and the check above is still yours.
+[docs/atlas.md](docs/atlas.md) is how invintelx.org's own database is set up —
+least-privilege users, an allowlist that is not `0.0.0.0/0`, and one database per
+environment — and is a reasonable model to copy even on a different provider.
 
 ## Checks
 

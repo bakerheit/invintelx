@@ -10,6 +10,12 @@ keeping a copy of it and — the part that actually matters — being able to pr
 > documented restore rather than a proven one. That is the difference INVX-81 exists to close, and
 > the epic's acceptance criterion says the same thing.
 
+Taking the snapshot here means `mongodump` against a Mongo you run. On a hosted cluster that half of
+the job belongs to the provider instead — see [docs/atlas.md](atlas.md) for how invintelx.org's is
+configured. Everything downstream of the archive is the same either way: what is worth having in it,
+what a restore must not merge into, and the check at the end that decides whether the copy was any
+good.
+
 ## What is worth dumping
 
 | Collection | If you lose it |
