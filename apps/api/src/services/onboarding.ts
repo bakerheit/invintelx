@@ -168,6 +168,15 @@ export async function loadDemoData(actor: {
  * their item would survive with its stock sitting at a location that no longer
  * exists. So a demo location or supplier that surviving data still points at is
  * kept and stops being demo — the user has adopted it, and it is theirs now.
+ *
+ * These deletes go straight at the collections rather than through the audit
+ * helpers, and that is a decision rather than an oversight. The audit log is a
+ * record of what people did to their data; the demo dataset is not their data,
+ * and writing forty deletions into the log would bury a real edit on a brand new
+ * instance under rows about SKUs that never existed. What it does leave behind is
+ * an entry for any demo row a user edited by hand before wiping — that row
+ * outlives its subject, which is what the log is for and is why nothing here
+ * deletes from it. Recorded on INVX-65 rather than decided quietly.
  */
 async function clearDemoRows(): Promise<DemoRemovalResult> {
   const demoItemIds = (

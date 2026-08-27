@@ -17,12 +17,12 @@ import {
   demoState,
   disconnect,
   ensureIndexes,
+  getDb,
   items,
   locations,
   movements,
   rebuildStockLevels,
-  sessions,
-  stockLevels,
+  schemaVersion,
   supplierItems,
   suppliers,
   users,
@@ -48,18 +48,27 @@ async function main(): Promise<void> {
 
   console.log(`Seeding ${env.MONGODB_DB}...`);
 
-  // Wipe first so the seed is repeatable rather than accumulating duplicates.
-  await Promise.all([
-    items().deleteMany({}),
-    users().deleteMany({}),
-    sessions().deleteMany({}),
-    locations().deleteMany({}),
-    movements().deleteMany({}),
-    stockLevels().deleteMany({}),
-    suppliers().deleteMany({}),
-    supplierItems().deleteMany({}),
-    demoState().deleteMany({}),
-  ]);
+  /*
+   * Wipe first so the seed is repeatable rather than accumulating duplicates.
+   *
+   * Asked of the database rather than written out as a list of collections. A
+   * list is a second place the set of collections is recorded, and it rots
+   * silently: whoever adds the next collection has no reason to look here, and
+   * the failure is a seeded database that is half old data - rows pointing at
+   * ids that were just deleted and rewritten.
+   *
+   * The schema version is the exception. `runMigrations` above has just brought
+   * it up to date, and emptying it would leave a freshly seeded database
+   * looking un-migrated to the next boot.
+   */
+  const database = getDb();
+  const keep = schemaVersion().collectionName;
+  const present = await database.listCollections({}, { nameOnly: true }).toArray();
+  await Promise.all(
+    present
+      .filter((collection) => collection.name !== keep)
+      .map((collection) => database.collection(collection.name).deleteMany({})),
+  );
 
   const now = new Date();
   const adminId = new ObjectId();

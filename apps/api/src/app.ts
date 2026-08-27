@@ -91,12 +91,14 @@ export function createApp(): Express {
 
   app.use(loadUser);
   app.use('/api/auth', authRouter);
+  // Ahead of the domain routes because it is the one that answers "is there a
+  // domain yet" - what this instance holds, and whether any of it is the demo.
+  app.use('/api/onboarding', requireAuth, onboardingRouter);
   app.use('/api/items', requireAuth, itemsRouter);
   app.use('/api/locations', requireAuth, locationsRouter);
   app.use('/api/movements', requireAuth, movementsRouter);
   app.use('/api/suppliers', requireAuth, suppliersRouter);
   app.use('/api/analytics', requireAuth, analyticsRouter);
-  app.use('/api/onboarding', requireAuth, onboardingRouter);
 
   // Last chance before the 404: a client-side route that survives a refresh.
   app.use(web.spaFallback);

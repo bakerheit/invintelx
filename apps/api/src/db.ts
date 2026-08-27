@@ -316,22 +316,26 @@ export async function ensureIndexes(): Promise<void> {
   await movements().createIndex({ groupId: 1 }, { name: 'by_group', sparse: true });
   await movements().createIndex({ reversesId: 1 }, { name: 'by_reverses', sparse: true });
 
-  await stockLevels().createIndex(
-    { itemId: 1, locationId: 1 },
-    { unique: true, name: 'uniq_item_location' },
-  );
-  await stockLevels().createIndex({ itemId: 1 }, { name: 'by_item' });
-
   /*
    * Sparse, because on an instance that never loaded the demo these index
    * nothing at all. They exist so that counting the demo dataset and deleting
    * it are index scans rather than collection scans over a real catalogue.
+   *
+   * Every collection that carries the flag is here and no others: stock levels
+   * are a projection rebuilt from the ledger, so they are never flagged and
+   * never deleted by marker.
    */
   await items().createIndex({ isDemo: 1 }, { name: 'by_demo', sparse: true });
   await locations().createIndex({ isDemo: 1 }, { name: 'by_demo', sparse: true });
   await suppliers().createIndex({ isDemo: 1 }, { name: 'by_demo', sparse: true });
   await supplierItems().createIndex({ isDemo: 1 }, { name: 'by_demo', sparse: true });
   await movements().createIndex({ isDemo: 1 }, { name: 'by_demo', sparse: true });
+
+  await stockLevels().createIndex(
+    { itemId: 1, locationId: 1 },
+    { unique: true, name: 'uniq_item_location' },
+  );
+  await stockLevels().createIndex({ itemId: 1 }, { name: 'by_item' });
 }
 
 interface LedgerTotal {
