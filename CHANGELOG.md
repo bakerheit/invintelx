@@ -74,6 +74,16 @@ this release is on the only shape the data has ever had.
   non-zero if they disagree — which is what a dump taken without a consistent
   snapshot leaves behind. `pnpm db:rebuild` does that, recomputes, and checks
   again. See [docs/backup-and-restore.md](docs/backup-and-restore.md).
+- A deployment guide and a configuration reference:
+  [docs/deployment.md](docs/deployment.md) covers TLS termination, the reverse
+  proxy headers the sign-in rate limiter depends on, why the session cookie only
+  gets `Secure` when `NODE_ENV=production`, and the `/api/health` endpoint to
+  point a probe at. [docs/configuration.md](docs/configuration.md) documents
+  every environment variable, including what a wrong value looks like from the
+  outside — and is **generated** from the Zod schema the API boots against, with
+  the rejection messages obtained by parsing a bad value rather than being
+  retyped. `pnpm docs:config` regenerates it and `pnpm test` fails if the page
+  and the schema have drifted apart.
 - Licensed AGPL-3.0-or-later, with the section 13 source offer the licence
   requires wired into the running app via `VITE_SOURCE_URL`. Point it at your
   own source if you modify InvIntelX and serve it to other people.

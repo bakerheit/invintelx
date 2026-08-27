@@ -8,5 +8,8 @@
     "moduleResolution": "NodeNext"
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
+  // configReference.ts writes a documentation page and is run with tsx from
+  // `pnpm docs:config`. It is still typechecked by `pnpm typecheck`; it just
+  // has no business in the shipped API.
+  "exclude": ["src/**/*.test.ts", "src/configReference.ts"]
 }

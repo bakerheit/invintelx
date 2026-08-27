@@ -11,6 +11,7 @@
     "seed": "tsx src/seed.ts",
     "reconcile": "tsx src/reconcile.ts",
     "reconcile:rebuild": "tsx src/reconcile.ts --rebuild",
+    "docs:config": "tsx src/configReference.ts",
     "test": "vitest run"
   },
   "dependencies": {
