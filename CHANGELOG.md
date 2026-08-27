@@ -41,6 +41,13 @@ this release is on the only shape the data has ever had.
 - An append-only `StockMovement` ledger with on-hand quantity as a projection
   derived from it. Receive, issue, transfer, adjust and reversal, with a screen
   to move stock.
+- Suppliers: model and REST API, with contact details, payment terms and the
+  lead time the supplier *promises*. That number is stored on its own and is
+  never written back from observed receipts, so the analytics epic can show the
+  gap between what a supplier says and what they do.
+- A supplier's catalogue: which items they supply, their own part number for
+  each — kept in their casing, because it goes on the purchase order — and the
+  quantity price ladder they sell it on.
 - Analytics over the ledger: demand series, days of cover, reorder suggestions
   and an action list of the items that need attention today.
 - A deliberate act between deploying an instance and it having an
