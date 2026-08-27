@@ -1,8 +1,11 @@
 import { env } from './env.js';
 import { connect, disconnect, ensureIndexes } from './db.js';
 import { createApp } from './app.js';
+import { installProcessErrorHandlers } from './lib/errorTracking.js';
+import { logger } from './lib/logger.js';
 import { prepareFirstAdminSetup, type SetupAnnouncement } from './lib/setup.js';
 import { MigrationError, runMigrations } from './migrations/index.js';
+import { VERSION } from './version.js';
 
 const RULE = '─'.repeat(62);
 
@@ -10,6 +13,13 @@ const RULE = '─'.repeat(62);
  * The minted token exists nowhere but here, so this log line is the whole
  * delivery mechanism. It is worth the shouting: an operator who scrolls past it
  * has to restart the process to get another one.
+ *
+ * The one thing in this process that stays on `console` rather than moving to
+ * the structured logger, and for two reasons that both matter. It is a banner
+ * addressed to a person, not a record addressed to a machine — sixty dashes as
+ * a JSON `msg` is not an improvement. And the logger redacts anything that
+ * looks like a token, correctly and by design, which would eat the single
+ * secret in this codebase that is *meant* to be printed.
  */
 function announceSetup(setup: SetupAnnouncement): void {
   if (setup.kind === 'claimed') return;
@@ -34,6 +44,13 @@ function announceSetup(setup: SetupAnnouncement): void {
 }
 
 async function main(): Promise<void> {
+  /*
+   * Before anything that could throw asynchronously, and from here rather than
+   * from `createApp`, because these are process-global: installing them in the
+   * app factory would change how every test file in the suite dies.
+   */
+  installProcessErrorHandlers();
+
   await connect();
   // Before anything reads or writes application data, and before the server
   // listens. A boot that gets past this is a boot whose code and database agree
@@ -44,11 +61,20 @@ async function main(): Promise<void> {
 
   const app = createApp();
   const server = app.listen(env.PORT, () => {
-    console.log(`[invintelx-api] listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
+    logger.info(
+      {
+        event: 'listening',
+        port: env.PORT,
+        nodeEnv: env.NODE_ENV,
+        version: VERSION,
+        url: `http://localhost:${String(env.PORT)}`,
+      },
+      'listening',
+    );
   });
 
   const shutdown = (signal: string): void => {
-    console.log(`[invintelx-api] ${signal} received, shutting down`);
+    logger.info({ event: 'shutdown', signal }, 'signal received, shutting down');
     server.close(() => {
       void disconnect().then(() => process.exit(0));
     });
@@ -76,6 +102,6 @@ main().catch((err: unknown) => {
     process.exit(1);
   }
 
-  console.error('[invintelx-api] failed to start', err);
+  logger.fatal({ event: 'boot_failed', err }, 'failed to start');
   process.exit(1);
 });

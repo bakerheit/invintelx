@@ -190,6 +190,20 @@ still missing is a published image, and a proof that runs the old release's
 *process* rather than restoring its data. It is how you run it today, honestly
 described.
 
+### Watching it run
+
+The API writes NDJSON to stdout, one line per request, with an id threaded
+through everything that request did — and passwords, session tokens and cookies
+stripped from every line before it is written. `/health` (and `/api/health`)
+answers 200 with the running version, or 503 when the database is unreachable,
+which is what makes it worth polling. Errors that nobody handled are collected
+in one place on both sides of the wire: a crash in somebody's browser becomes a
+line in your log, carrying the request id of the API call that preceded it.
+
+[docs/observability.md](docs/observability.md) has the log format, what the
+redactor removes and why, how to point a platform's probe at the health
+endpoint, and the fifteen-line seam where Sentry or an equivalent attaches.
+
 ### Backups
 
 The movement ledger is the only thing here that cannot be recomputed from

@@ -2,10 +2,13 @@ import express, { type Express } from 'express';
 import cookieParser from 'cookie-parser';
 import { env, isProduction } from './env.js';
 import { healthcheck } from './db.js';
+import { logger } from './lib/logger.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
+import { requestLogger } from './middleware/requestLog.js';
 import { loadUser, requireAuth } from './middleware/auth.js';
 import { auditRouter } from './routes/audit.js';
 import { authRouter } from './routes/auth.js';
+import { clientErrorsRouter } from './routes/clientErrors.js';
 import { itemsRouter } from './routes/items.js';
 import { locationsRouter } from './routes/locations.js';
 import { movementsRouter } from './routes/movements.js';
@@ -22,6 +25,13 @@ export function createApp(): Express {
   // load balancer - the rate limiter keys on it.
   if (isProduction) app.set('trust proxy', 1);
   app.disable('x-powered-by');
+
+  /*
+   * First, ahead of the body parsers: a request that dies inside one of those -
+   * a 16MB CSV, malformed JSON - is exactly the request somebody will want a
+   * line for, and mounting this after them would be the one case with no id.
+   */
+  app.use(requestLogger());
 
   /*
    * A CSV import carries the whole file in its body, which is the one request
@@ -66,30 +76,57 @@ export function createApp(): Express {
   app.use(web.serveFiles);
 
   if (web.available) {
-    console.log(`[invintelx-api] serving the web app from ${web.root}`);
+    logger.info({ event: 'web_assets', root: web.root }, 'serving the web app');
   } else if (isProduction) {
-    console.warn(
-      `[invintelx-api] no web build at ${web.root}: serving /api only. Run ` +
-        `\`pnpm build\`, set WEB_DIST, or put a reverse proxy in front that ` +
-        `serves the assets itself.`,
+    logger.warn(
+      { event: 'web_assets', root: web.root },
+      'no web build found: serving /api only. Run `pnpm build`, set WEB_DIST, or ' +
+        'put a reverse proxy in front that serves the assets itself.',
     );
   }
 
-  app.get('/api/health', (_req, res) => {
-    void healthcheck().then((database) => {
-      res.status(database ? 200 : 503).json({
-        status: database ? 'ok' : 'degraded',
-        // Unauthenticated on purpose: "which version is this" is the first
-        // question of every deployment bug report, and an operator who cannot
-        // sign in still has to be able to answer it.
-        version: VERSION,
-        database,
-        uptimeSeconds: Math.round(process.uptime()),
-      });
-    });
+  /**
+   * What a platform's health check polls.
+   *
+   * Two paths for one handler. `/api/health` is what this app has always
+   * reported at and what the docs and the release tooling name; `/health` is
+   * where every host looks by default, and a probe misconfigured by one path
+   * segment reads as "the instance is down" for as long as nobody notices.
+   * Registering both costs a line and removes the failure mode.
+   *
+   * Ahead of `loadUser`, so a probe every three seconds forever does not become
+   * a session lookup in Mongo every three seconds forever.
+   */
+  app.get(['/health', '/api/health'], (_req, res, next) => {
+    healthcheck()
+      .then((database) => {
+        /*
+         * 503 when the database is unreachable, which is what makes this worth
+         * polling: a process that is listening but cannot read anything is not
+         * healthy, and a probe that only checks the port would keep it in the
+         * load balancer.
+         */
+        res.status(database ? 200 : 503).json({
+          status: database ? 'ok' : 'degraded',
+          // Unauthenticated on purpose: "which version is this" is the first
+          // question of every deployment bug report, and an operator who cannot
+          // sign in still has to be able to answer it.
+          version: VERSION,
+          database,
+          uptimeSeconds: Math.round(process.uptime()),
+        });
+      })
+      .catch(next);
   });
 
   app.use(loadUser);
+  /*
+   * Before the authenticated routers and outside them: a browser error on the
+   * login page is the one this most needs to hear about, and by definition it
+   * has no session. `loadUser` still ran, so a report from a signed-in browser
+   * is still attributed.
+   */
+  app.use('/api/client-errors', clientErrorsRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/items', requireAuth, itemsRouter);
   app.use('/api/locations', requireAuth, locationsRouter);

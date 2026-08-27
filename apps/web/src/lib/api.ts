@@ -1,5 +1,6 @@
 import { apiErrorSchema } from '@invintelx/shared';
 import type { z } from 'zod';
+import { noteFailedRequest } from './errorReporting';
 
 export class ApiError extends Error {
   constructor(
@@ -8,6 +9,12 @@ export class ApiError extends Error {
     message: string,
     /** Field-keyed messages from server-side validation, for inline form errors. */
     readonly fields?: Record<string, string>,
+    /**
+     * The server's `X-Request-Id` for the call that failed. Carried so a bug
+     * report, or an error reported from the browser, can name the exact request
+     * whose lines are already in the server log.
+     */
+    readonly requestId?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -46,12 +53,17 @@ async function request(path: string, options: RequestOptions = {}): Promise<unkn
     ...(signal ? { signal } : {}),
   });
 
+  // Set on every response by the API's request logger, so it is here whether the
+  // call succeeded or not - but only worth keeping when it did not.
+  const requestId = response.headers.get('x-request-id') ?? undefined;
+
   if (response.status === 204) return undefined;
 
   const text = await response.text();
   const payload: unknown = text.length > 0 ? safeJsonParse(text) : undefined;
 
   if (!response.ok) {
+    noteFailedRequest(requestId);
     const parsed = apiErrorSchema.safeParse(payload);
     const error = parsed.success
       ? new ApiError(
@@ -59,8 +71,15 @@ async function request(path: string, options: RequestOptions = {}): Promise<unkn
           parsed.data.error.code,
           parsed.data.error.message,
           parsed.data.error.fields,
+          requestId,
         )
-      : new ApiError(response.status, 'unknown_error', `Request failed (${response.status})`);
+      : new ApiError(
+          response.status,
+          'unknown_error',
+          `Request failed (${response.status})`,
+          undefined,
+          requestId,
+        );
 
     // The /me probe on boot is expected to 401 when signed out; the caller
     // handles that one, so only fire the global hook for real sessions dying.

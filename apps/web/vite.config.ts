@@ -1,9 +1,23 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 
+/**
+ * Baked in so a browser error report can say which build produced it — a tab
+ * left open across a deploy is running code the server no longer has. Read from
+ * this package's manifest, which `scripts/release/check-release.mjs` keeps equal
+ * to the tag and therefore equal to the version the API reports at /health.
+ */
+const { version } = JSON.parse(
+  readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf8'),
+) as { version: string };
+
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(version),
+  },
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

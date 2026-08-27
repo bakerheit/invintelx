@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
+import type { ClientErrorReport } from '@invintelx/shared';
 import { RouteError } from './RouteError';
 import { ApiError } from '@/lib/api';
+import { resetErrorReporting } from '@/lib/errorReporting';
 
 /**
  * Throws during render rather than from a loader. That is the case this
@@ -22,6 +24,30 @@ function renderThrowing(thrown: unknown) {
   );
   return render(<RouterProvider router={router} />);
 }
+
+/**
+ * The boundary now reports what it catches. Left unstubbed, every test in this
+ * file would make a real POST at the happy-dom origin and litter the run with
+ * connection refusals.
+ */
+const fetchMock = vi.fn();
+
+function reports(): ClientErrorReport[] {
+  return fetchMock.mock.calls.map(
+    (call) => JSON.parse((call[1] as { body: string }).body) as ClientErrorReport,
+  );
+}
+
+beforeEach(() => {
+  resetErrorReporting();
+  fetchMock.mockReset();
+  fetchMock.mockResolvedValue({ ok: true });
+  vi.stubGlobal('fetch', fetchMock);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('RouteError', () => {
   it('catches a thrown Error instead of leaving a blank page', async () => {
@@ -71,5 +97,50 @@ describe('RouteError', () => {
       'href',
       '/items',
     );
+  });
+});
+
+describe('telling the server it happened', () => {
+  it('reports the crash the user just saw', async () => {
+    renderThrowing(new Error('the widget exploded'));
+    await screen.findByText('Something broke');
+
+    expect(reports()[0]).toMatchObject({ kind: 'render', message: 'the widget exploded' });
+  });
+
+  it('names the API request that failed, when there was one', async () => {
+    renderThrowing(new ApiError(500, 'internal_error', 'The server gave up', undefined, 'req-11'));
+    await screen.findByText('The server gave up');
+
+    // This is the join: the browser stack and the server's 500 line, one id.
+    expect(reports()[0]?.requestId).toBe('req-11');
+  });
+
+  it('stays quiet about a 404 from a loader', async () => {
+    // The boundary rendered because that is how the router reports a missing
+    // item, not because anything broke. Reporting it would bury the crashes.
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          errorElement: <RouteError />,
+          loader: () => {
+            throw new Response('No such item', { status: 404, statusText: 'Not Found' });
+          },
+          element: <p>should never render</p>,
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+    await screen.findByText('404 Not Found');
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet about an expired session', async () => {
+    renderThrowing(new ApiError(401, 'unauthorized', 'Authentication required'));
+    await screen.findByText('Authentication required');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -53,6 +53,24 @@ const envSchema = z.object({
    * Ignored entirely once the instance has an account.
    */
   SETUP_TOKEN: z.string().min(16, 'SETUP_TOKEN must be at least 16 characters').optional(),
+
+  /**
+   * Lowest level that gets written. `silent` in the test suite by default: the
+   * API tests drive hundreds of requests through the real middleware stack, and
+   * a request log line for each of them buries the assertion that failed.
+   * Setting it explicitly still works there, which is how you debug one.
+   */
+  LOG_LEVEL: z
+    .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'])
+    .default(process.env.NODE_ENV === 'test' ? 'silent' : 'info'),
+
+  /**
+   * Unset means JSON in production and human-readable everywhere else, which is
+   * the right default in both places. Set it when the deployment disagrees — a
+   * staging container somebody tails wants `pretty`, and a developer debugging
+   * their log pipeline wants `json`.
+   */
+  LOG_FORMAT: z.enum(['json', 'pretty']).optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

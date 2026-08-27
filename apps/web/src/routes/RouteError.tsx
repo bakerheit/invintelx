@@ -1,7 +1,9 @@
+import { useEffect } from 'react';
 import { isRouteErrorResponse, Link, useRouteError } from 'react-router';
 import { AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
+import { reportClientError } from '@/lib/errorReporting';
 
 /**
  * Mounted on both layout roots. Without it, anything thrown inside a route
@@ -11,6 +13,21 @@ import { ApiError } from '@/lib/api';
 export function RouteError() {
   const error = useRouteError();
   const { title, detail } = describe(error);
+
+  /*
+   * The user has now seen a broken screen; this is what makes sure somebody
+   * operating the instance sees it too. In an effect rather than in `describe`
+   * because rendering must stay a pure function of the error — React renders a
+   * boundary twice in StrictMode, and a network call in the render path would
+   * fire twice for one failure.
+   */
+  useEffect(() => {
+    if (!isReportable(error)) return;
+    reportClientError(error, {
+      kind: 'render',
+      ...(error instanceof ApiError && error.requestId ? { requestId: error.requestId } : {}),
+    });
+  }, [error]);
 
   return (
     <div className="flex min-h-svh items-center justify-center px-4 py-12">
@@ -33,6 +50,20 @@ export function RouteError() {
       </div>
     </div>
   );
+}
+
+/**
+ * Which of these are worth a server-side log line.
+ *
+ * A 404 from a loader and a 401 on a dead session are the app working: the
+ * boundary rendered because that is how the router reports them, not because
+ * anything broke. Reporting them would bury the crashes in noise, which is how
+ * an error tracker becomes something nobody reads.
+ */
+function isReportable(error: unknown): boolean {
+  if (isRouteErrorResponse(error)) return error.status >= 500;
+  if (error instanceof ApiError) return error.status >= 500;
+  return true;
 }
 
 function describe(error: unknown): { title: string; detail: string } {

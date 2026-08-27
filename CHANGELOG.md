@@ -76,8 +76,35 @@ this release is on the only shape the data has ever had.
 - The API serves the built web app itself, so a production instance is one
   process on one origin. `WEB_DIST` overrides where it looks; pointing it at a
   directory with no `index.html` is a boot failure rather than a warning.
-- `/api/health` reports the running version, so a bug report can say which
-  release it is against.
+- A health endpoint worth polling, at `/health` and `/api/health` — two paths
+  for one handler, because hosts differ and a probe misconfigured by one path
+  segment reads as "the instance is down". It reports the running version, so a
+  bug report can say which release it is against, and answers **503 when the
+  database is unreachable**: a process that is listening but cannot read
+  anything is not healthy, and a probe that only checked the port would keep it
+  in the load balancer. Unauthenticated, because an operator who cannot sign in
+  still has to be able to ask.
+- Structured logging. The API writes NDJSON to stdout in pino's record format,
+  one line per request, with **passwords, session tokens and cookies stripped
+  from every line before it is written** — by shape rather than by a list of
+  fields somebody remembered to name, so the rule holds for log lines nobody has
+  written yet. `LOG_LEVEL` and `LOG_FORMAT` configure it; health probes and
+  static assets are logged below `info` so a platform polling every three
+  seconds cannot drown the log.
+- A request id threaded through everything. Every response carries
+  `X-Request-Id`; an inbound one from a proxy is honoured when it is safe to,
+  and replaced otherwise, since that header is attacker-controlled and goes
+  verbatim into the log. Code several calls below a route is stamped with the id
+  without being handed it.
+- Error tracking on both sides of the wire. Every 5xx, every uncaught exception
+  and every rejection nobody handled is collected in one place, scrubbed, and
+  written as an `exception` event — and so is a crash in somebody's browser,
+  which the web app reports to `POST /api/client-errors` carrying its stack, the
+  release that tab was running, and the request id of the API call that failed
+  under it. An unhandled rejection is reported without killing the process,
+  which differs from Node's default and is explained in
+  [docs/observability.md](docs/observability.md), along with the seam where
+  Sentry or an equivalent attaches.
 - A documented backup and restore procedure, and a command that checks a restore
   rather than assuming it. `pnpm db:verify` recomputes every on-hand figure from
   the ledger and compares it with what is stored, writing nothing and exiting
@@ -120,4 +147,9 @@ this release is on the only shape the data has ever had.
 - The restore procedure is documented and its final check is tested, but nobody
   has yet run it end to end against a real deployment. An untested backup is a
   belief; treat it as documented rather than proven.
+- Logs go to stdout and nowhere else. There is no shipper, no retention and no
+  rotation: whatever runs the process owns the stream. Errors are collected into
+  a single scrubbed event and written to that log, which is a working error
+  tracker only if the log lands somewhere searchable — sending them onward to
+  Sentry or an equivalent is a documented seam, not something this release does.
 - Self-hosting is permitted and documented but not *supported*. See the README.

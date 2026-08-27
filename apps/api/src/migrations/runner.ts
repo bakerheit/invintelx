@@ -10,6 +10,7 @@ import {
   type SchemaVersionDoc,
 } from '../db.js';
 import { MIGRATIONS, assertMigrationsAreWellFormed } from './list.js';
+import { logger } from '../lib/logger.js';
 import type { Migration } from './types.js';
 
 /**
@@ -80,7 +81,10 @@ export interface RunMigrationsOptions {
 }
 
 function defaultLog(message: string): void {
-  console.log(`[invintelx-api] migrations: ${message}`);
+  // Still a line of prose - a migration log is read as a narrative of what the
+  // boot did to the database - but carried on a structured record, so a run can
+  // be pulled out of a mixed stream by `event: migration`.
+  logger.info({ event: 'migration' }, message);
 }
 
 function sleep(ms: number): Promise<void> {

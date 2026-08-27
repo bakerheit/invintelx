@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { MongoServerError } from 'mongodb';
 import { AppError, ConflictError, NotFoundError } from '../errors.js';
 import { isProduction } from '../env.js';
+import { captureException } from '../lib/errorTracking.js';
 
 export function notFoundHandler(_req: Request, _res: Response, next: NextFunction): void {
   next(new NotFoundError('No route matches that path'));
@@ -12,18 +13,22 @@ export function notFoundHandler(_req: Request, _res: Response, next: NextFunctio
  * anything unrecognised becomes a 500 with a generic message, because internal
  * error text has a habit of containing things users should not see.
  */
-export function errorHandler(
-  err: unknown,
-  _req: Request,
-  res: Response,
-  next: NextFunction,
-): void {
+export function errorHandler(err: unknown, req: Request, res: Response, next: NextFunction): void {
   if (res.headersSent) return next(err);
 
   const normalized = normalize(err);
 
+  /*
+   * Only 5xx. A 404 or a failed password is the system working, and reporting
+   * those as errors is how an error tracker becomes something people mute.
+   * Every status, 4xx included, still appears on the request line that
+   * `requestLog` writes when the response finishes.
+   */
   if (normalized.status >= 500) {
-    console.error('[error]', err);
+    captureException(err, {
+      context: { method: req.method, route: req.path, status: normalized.status },
+      message: 'request failed',
+    });
   }
 
   res.status(normalized.status).json({

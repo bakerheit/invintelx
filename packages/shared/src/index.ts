@@ -9,3 +9,4 @@ export * from './location.js';
 export * from './movement.js';
 export * from './supplier.js';
 export * from './analytics.js';
+export * from './observability.js';
