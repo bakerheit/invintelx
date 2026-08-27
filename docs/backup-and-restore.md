@@ -21,6 +21,7 @@ keeping a copy of it and — the part that actually matters — being able to pr
 | `schemaVersion` | Recomputable only by guessing. Restore it or the next boot re-runs migrations against a database that has already had them. |
 | `sessions` | Disposable. Losing it signs everybody out; the TTL index deletes them anyway. |
 | `setupTokens` | Disposable, and short-lived by design. |
+| `rateLimits` | Disposable. Restoring it only re-imposes sign-in windows that have already passed; the TTL index empties it within the hour regardless. |
 
 So: **dump the whole database.** The only collection you could reasonably leave out is `sessions`,
 and skipping it buys you nothing but a round of sign-ins.

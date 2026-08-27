@@ -50,6 +50,28 @@ export interface SetupTokenDoc {
 
 export const SETUP_TOKEN_ID = 'setup';
 
+/**
+ * One fixed window of one rate limiter, for one key.
+ *
+ * Shared by every API instance, which is the whole point: buckets in process
+ * memory give each instance the full quota, so the effective limit multiplies by
+ * the number of instances. The `_id` carries the limiter name, the window and
+ * the key, so a window is a document and counting is a single atomic `$inc`
+ * rather than a read followed by a write.
+ *
+ * The key is a client IP. It is written as it arrives rather than hashed —
+ * hashing a 32-bit address protects nothing, the whole space is enumerable —
+ * and the TTL index removes the document once its window has passed, so no
+ * address outlives the window it was seen in.
+ */
+export interface RateLimitDoc {
+  /** `${name}:${windowStart}:${key}` */
+  _id: string;
+  count: number;
+  /** End of the window. Also what the TTL index sweeps on. */
+  expiresAt: Date;
+}
+
 /** One migration that has run, kept forever so the history is readable. */
 export interface AppliedMigrationDoc {
   version: number;
@@ -245,6 +267,8 @@ export const users = (): Collection<UserDoc> => getDb().collection<UserDoc>('use
 export const sessions = (): Collection<SessionDoc> => getDb().collection<SessionDoc>('sessions');
 export const setupTokens = (): Collection<SetupTokenDoc> =>
   getDb().collection<SetupTokenDoc>('setupTokens');
+export const rateLimits = (): Collection<RateLimitDoc> =>
+  getDb().collection<RateLimitDoc>('rateLimits');
 export const items = (): Collection<ItemDoc> => getDb().collection<ItemDoc>('items');
 export const locations = (): Collection<LocationDoc> => getDb().collection<LocationDoc>('locations');
 export const suppliers = (): Collection<SupplierDoc> => getDb().collection<SupplierDoc>('suppliers');
@@ -271,6 +295,18 @@ export async function ensureIndexes(): Promise<void> {
   // Mongo's TTL monitor deletes expired sessions on its own sweep, so nothing
   // in the app has to remember to clean up.
   await sessions().createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'ttl_expires' });
+
+  /*
+   * The limiter itself never deletes a bucket. Every document here is garbage
+   * the moment its window ends, and Mongo's TTL monitor is what collects it —
+   * which is also why the limiter can be stateless across instances.
+   *
+   * The sweep runs about once a minute, so a spent bucket outlives its window by
+   * up to that long. That costs a little space and nothing else: the window is
+   * part of the `_id`, so a request in a new window never lands on an old
+   * bucket whether or not the sweep has got to it yet.
+   */
+  await rateLimits().createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'ttl_expires' });
 
   await items().createIndex({ sku: 1 }, { unique: true, name: 'uniq_sku' });
   await items().createIndex({ status: 1, updatedAt: -1 }, { name: 'by_status_updated' });
