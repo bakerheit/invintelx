@@ -124,6 +124,24 @@ describe('the line written when a request finishes', () => {
     expect(requestLine()?.url).toContain('[redacted]');
   });
 
+  /*
+   * INVX-116 f-5, end to end. This middleware is mounted first, ahead of the
+   * body parsers, and the line is built inside a `res` finish listener - not the
+   * request call stack. A throw there is not a 500; it is an `uncaughtException`
+   * out of an event emit, from an unauthenticated GET on any route.
+   */
+  it('survives a query string that cannot be percent-decoded', async () => {
+    capture();
+    const response = await request(app).get('/api/items?%zz=1');
+
+    expect(response.status).toBe(401);
+    // The failure mode this replaces was silent in the one place that would
+    // have recorded it: `logged` was already true, so the close listener
+    // returned early and the request got no line at all.
+    expect(requestLine()).toBeDefined();
+    expect(requestLine()?.url).toContain('%zz');
+  });
+
   it('never logs the session cookie that came in with the request', async () => {
     capture();
     await request(app).get('/api/items').set('Cookie', 'invintelx_session=a-live-session-token');

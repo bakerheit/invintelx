@@ -127,12 +127,23 @@ arrive two ways:
   `[redacted]`.
 - **By value.** A Mongo URI with credentials in it, a `Bearer …` copied into an
   error message, a `?setup_token=…` in a URL. Nothing about the *key* of those
-  says secret; the string does.
+  says secret; the string does. This pass also knows the colon forms —
+  `"password":"…"` inside a stringified body, `sessionToken: '…'` from a class
+  dumping its own fields — because a secret that was serialised *before* it got
+  here has no key left for the key pass to match.
 
 It also bounds what a line can be: depth, array length, key count and string
 length are all capped, cycles become `[circular]`, and the output is always
 JSON-serialisable. A logger that can throw on the shape of what it was handed
-is a logger that goes quiet exactly when something has gone wrong.
+is a logger that goes quiet exactly when something has gone wrong — so
+`redact()` never throws, and a field it cannot describe costs that field rather
+than the record.
+
+The same rule holds one level up. The request line is built inside a `res`
+finish listener, which is not the request call stack: no Express error handler
+sits above it, so a throw there would leave as an `uncaughtException` rather
+than a 500. `requestLog.ts` catches around building the record and falls back to
+a minimal line, so losing a field can never cost the process.
 
 If you add a field to a log line and it comes out `[redacted]`, that is the
 rule working. Rename the field.

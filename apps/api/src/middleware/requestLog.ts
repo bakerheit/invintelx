@@ -90,32 +90,55 @@ export function requestLogger(): RequestHandler {
       const path = req.path;
       const status = res.statusCode;
 
-      logger[levelFor(status, path)](
-        {
-          event: 'request',
-          /*
-           * Explicit, not inherited: these listeners were registered before the
-           * async context below was entered, so the logger's ambient lookup
-           * finds nothing here. The one line that most needs the id would be
-           * the one line without it.
-           */
-          requestId,
-          method: req.method,
-          // originalUrl, not url: a router that has consumed its mount point
-          // rewrites `url`, so `url` here would say `/42` and mean nothing.
-          url: redactUrl(req.originalUrl),
-          status,
-          durationMs: Math.round(durationMs * 100) / 100,
-          /*
-           * Populated by `loadUser` long after this middleware ran, and read
-           * here at finish time, which is why the line can say who it was.
-           */
-          ...(req.user ? { userId: req.user.id } : {}),
-          ip: req.ip,
-          ...(aborted ? { aborted: true } : {}),
-        },
-        aborted ? 'request aborted' : 'request completed',
-      );
+      /*
+       * This runs from a `res` event, which is not the request call stack: no
+       * Express error handler is above it, so anything thrown in here leaves as
+       * an `uncaughtException` and takes the process with it. That is the shape
+       * of the bug INVX-116 f-5 found - one malformed percent-escape in a query
+       * string, on any route, unauthenticated. The escape is guarded at source
+       * in `redactUrl` now; this is the guard that says no *future* field added
+       * to this record can cost the process either.
+       *
+       * The fallback line is deliberately built from primitives only, so the
+       * thing that failed cannot fail again inside the handler for it.
+       */
+      try {
+        logger[levelFor(status, path)](
+          {
+            event: 'request',
+            /*
+             * Explicit, not inherited: these listeners were registered before the
+             * async context below was entered, so the logger's ambient lookup
+             * finds nothing here. The one line that most needs the id would be
+             * the one line without it.
+             */
+            requestId,
+            method: req.method,
+            // originalUrl, not url: a router that has consumed its mount point
+            // rewrites `url`, so `url` here would say `/42` and mean nothing.
+            url: redactUrl(req.originalUrl),
+            status,
+            durationMs: Math.round(durationMs * 100) / 100,
+            /*
+             * Populated by `loadUser` long after this middleware ran, and read
+             * here at finish time, which is why the line can say who it was.
+             */
+            ...(req.user ? { userId: req.user.id } : {}),
+            ip: req.ip,
+            ...(aborted ? { aborted: true } : {}),
+          },
+          aborted ? 'request aborted' : 'request completed',
+        );
+      } catch (error) {
+        try {
+          logger.error(
+            { event: 'request', requestId, status, err: error },
+            'request completed, but its log line could not be built',
+          );
+        } catch {
+          // Nothing left to try. Losing a line is not worth losing the process.
+        }
+      }
     };
 
     res.on('finish', () => {

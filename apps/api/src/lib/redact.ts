@@ -71,6 +71,38 @@ const AUTH_SCHEME = /\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]+/gi;
 const SECRET_ASSIGNMENT =
   /([A-Za-z0-9_.-]*(?:token|password|secret|session|cookie|auth|apikey|api_key)[A-Za-z0-9_.-]*)=([^;&\s]+)/gi;
 
+/**
+ * The same secret, written with a colon instead of an equals sign.
+ *
+ * A secret that arrives *already serialised* has no key left for the key pass to
+ * match: `JSON.stringify(body)` inside an error message, a driver's `toString`
+ * dumping its own fields, a caught upstream response body. By the time that
+ * string reaches here it is one value, and `SECRET_ASSIGNMENT` wants an `=`.
+ *
+ * Two rules rather than one because the safe way to tell a labelled secret from
+ * a `host:port` differs by form. The JSON rule requires a quoted value, and
+ * replaces it with a quoted `[redacted]` so the line stays parseable. The prose
+ * rule requires whitespace after the colon, which `token.example.com:443` and
+ * `at Object.tokenize (/app/token.js:12:5)` do not have.
+ */
+const SECRET_FRAGMENT_GROUP =
+  '[A-Za-z0-9_.-]*(?:token|password|passwd|passphrase|secret|session|cookie|authorization|apikey|api_key|credential)[A-Za-z0-9_.-]*';
+
+const SECRET_JSON_FIELD = new RegExp(
+  `("?)(${SECRET_FRAGMENT_GROUP})\\1(\\s*:\\s*)"(?:[^"\\\\]|\\\\.)*"`,
+  'gi',
+);
+
+/**
+ * `bearer`/`basic` and an already-redacted value are excluded because
+ * `AUTH_SCHEME` and the rule above have run by then, and re-redacting produces
+ * `Authorization: [redacted] [redacted]`.
+ */
+const SECRET_LABELLED_VALUE = new RegExp(
+  `(${SECRET_FRAGMENT_GROUP})(\\s*:\\s+)(?!\\[redacted\\]|"\\[redacted\\]"|bearer\\b|basic\\b)([^\\s,;}\\])]+)`,
+  'gi',
+);
+
 /** Normalised so `X-Api-Key`, `api_key` and `apiKey` are the same key. */
 function normaliseKey(key: string): string {
   return key.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -87,15 +119,40 @@ export function isSecretKey(key: string): boolean {
  * the ones that reached here inside an error message or a stack frame.
  */
 export function scrubString(value: string): string {
-  return value
-    .replace(URI_CREDENTIALS, `$1${REDACTED}@`)
-    .replace(AUTH_SCHEME, `$1 ${REDACTED}`)
-    .replace(SECRET_ASSIGNMENT, `$1=${REDACTED}`);
+  return (
+    value
+      .replace(URI_CREDENTIALS, `$1${REDACTED}@`)
+      .replace(AUTH_SCHEME, `$1 ${REDACTED}`)
+      .replace(SECRET_ASSIGNMENT, `$1=${REDACTED}`)
+      // JSON before prose: the prose rule would eat the closing quote and leave
+      // a line that no longer parses.
+      .replace(SECRET_JSON_FIELD, `$1$2$1$3"${REDACTED}"`)
+      .replace(SECRET_LABELLED_VALUE, `$1$2${REDACTED}`)
+  );
 }
 
 function truncate(value: string, limit: number): string {
   if (value.length <= limit) return value;
   return `${value.slice(0, limit)}… (${String(value.length - limit)} more characters)`;
+}
+
+/**
+ * A query-parameter name as a person wrote it, or `undefined` if it is not
+ * decodable at all.
+ *
+ * `decodeURIComponent` throws `URIError` on a malformed escape — `%zz`, or a
+ * bare `%` at the end of a name — and this input is the raw query string of a
+ * request, so it is attacker-chosen. Express does not decode `originalUrl`, so
+ * `GET /?%zz=1` arrives here intact. Unguarded, the throw leaves through a
+ * `res` event listener rather than the request call stack, where no Express
+ * error handler can see it and it becomes an `uncaughtException`.
+ */
+function decodeName(name: string): string | undefined {
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -117,7 +174,10 @@ export function redactUrl(url: string): string {
       const eq = pair.indexOf('=');
       if (eq === -1) return pair;
       const name = pair.slice(0, eq);
-      return isSecretKey(decodeURIComponent(name)) ? `${name}=${REDACTED}` : pair;
+      const decoded = decodeName(name);
+      // `undefined` is "cannot be shown to be safe", which in this file means
+      // redact - the same default the rest of it takes.
+      return decoded === undefined || isSecretKey(decoded) ? `${name}=${REDACTED}` : pair;
     })
     .join('&');
 
@@ -143,11 +203,18 @@ function redactError(error: Error, depth: number, seen: Set<object>): Record<str
    * AppError's `code` and `fields`, a MongoServerError's `keyPattern`. Dropping
    * them would leave a log line that says only "something threw".
    */
-  for (const key of Object.keys(error)) {
-    if (key === 'stack' || key === 'message' || key === 'name') continue;
+  const keys = Object.keys(error).filter(
+    (key) => key !== 'stack' && key !== 'message' && key !== 'name',
+  );
+  // Bounded like every other container here. An error is an object somebody
+  // else's library built, and nothing stops it carrying a thousand fields.
+  for (const key of keys.slice(0, MAX_OBJECT_KEYS)) {
     out[key] = isSecretKey(key)
       ? REDACTED
       : walk((error as unknown as Record<string, unknown>)[key], depth + 1, seen);
+  }
+  if (keys.length > MAX_OBJECT_KEYS) {
+    out['…'] = `${String(keys.length - MAX_OBJECT_KEYS)} more keys`;
   }
 
   if (error.cause !== undefined && error.cause !== null) {
@@ -236,11 +303,40 @@ function walk(value: unknown, depth: number, seen: Set<object>): unknown {
   }
 }
 
-function describeInstance(object: object): string | undefined {
-  const name = object.constructor.name;
-  const asString: unknown = (object as { toString?: unknown }).toString;
-  if (typeof asString !== 'function' || asString === Object.prototype.toString) return undefined;
+/**
+ * The constructor name, for objects that may not have a constructor.
+ *
+ * `isPlainish` lets a null-prototype object through, and an object created over
+ * a *null-prototype parent* is not plainish and reaches here with no
+ * `constructor` on its chain at all. Reading `.name` off that is a `TypeError`,
+ * and the walk wraps its recursion in `try/finally` rather than `try/catch`, so
+ * it would leave through the outer catch in `redact` and cost the whole record
+ * rather than this one field.
+ */
+function constructorName(object: object): string {
   try {
+    const name: unknown = (object as { constructor?: { name?: unknown } }).constructor?.name;
+    return typeof name === 'string' && name.length > 0 ? name : 'Object';
+  } catch {
+    return 'Object';
+  }
+}
+
+function describeInstance(object: object): string | undefined {
+  const name = constructorName(object);
+
+  /*
+   * A class whose *name* says secret is described by name only. The whole point
+   * of this branch is that it flattens an instance into one string, and the
+   * value pass is the only thing that then runs over it - which is exactly the
+   * case where the key pass would have caught something the value rules do not
+   * know the grammar of.
+   */
+  if (isSecretKey(name)) return `[${name}]`;
+
+  try {
+    const asString: unknown = (object as { toString?: unknown }).toString;
+    if (typeof asString !== 'function' || asString === Object.prototype.toString) return undefined;
     const text = (object as { toString(): string }).toString();
     if (text === '[object Object]') return undefined;
     return scrubString(truncate(`${name}(${text})`, MAX_STRING_LENGTH));
