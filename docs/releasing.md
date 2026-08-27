@@ -99,8 +99,11 @@ completely or does not happen:
 1. **check** — the tag parses as semver, the tagged commit is on `main`, the
    package versions agree with it, and the changelog section exists, is dated,
    and answers both mandatory questions.
-2. **verify** — typecheck, lint, test and build, by calling the CI workflow
-   itself rather than a copy of it. A tag that does not build is not a release.
+2. **verify** — typecheck, lint, test and build, plus building the container
+   image and starting it, by calling the CI workflow itself rather than a copy
+   of it. A tag that does not build is not a release, and neither is one whose
+   image does not. The build below reuses this one's layers through the shared
+   `type=gha` cache rather than paying for it twice.
 3. **image** — builds and pushes to `ghcr.io/<owner>/invintelx`, tagged with the
    version and, for a real release, the rolling `:1.2`, `:1` and `:latest`.
 4. **publish** — creates the GitHub release using the changelog section

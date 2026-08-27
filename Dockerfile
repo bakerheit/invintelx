@@ -24,6 +24,18 @@ WORKDIR /src
 
 # Manifests first: dependencies only change when these do, so an edit to a
 # source file reuses the install layer.
+#
+# This list has to be every workspace project, not most of them. pnpm-workspace
+# globs apps/* and packages/*, and a frozen install checks the lockfile's
+# importers against the projects it can actually see — so a context that is one
+# manifest short fails here rather than installing something smaller. That is
+# the right failure, but it used to be a failure nothing would ever run: add a
+# project, and the first build was a merge to main. The `image` job in
+# .github/workflows/ci.yml now builds this file on every pull request, so it is
+# the pull request that goes red instead.
+#
+# Four projects as of this commit — root, apps/api, apps/web, packages/shared —
+# which is `importers:` in pnpm-lock.yaml. Add a fifth, add a line.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/

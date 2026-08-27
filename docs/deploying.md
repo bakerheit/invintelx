@@ -175,6 +175,41 @@ cannot see the hostname it is being asked to certify.
    stays the same across a deploy, which is exactly why the app sends it
    `no-cache`.
 
+## Before any of that: CI builds the image
+
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) has two jobs. `verify`
+typechecks, lints, tests and builds on the runner. `image` builds the
+`Dockerfile` and runs what it built — build only, nothing pushed.
+
+It matters because none of `verify` touches the container. Without the `image`
+job the first build of the image is a merge to `main` and the first *run* of it
+is a production deploy, which is not a place to discover that a workspace
+project was added without a `COPY` line.
+
+Three things are asserted against the built image, in this order, so that a
+failure names itself:
+
+1. **`@invintelx/shared` resolves to JavaScript** under
+   `--conditions=invintelx-dist`, run from `apps/api` because that is the
+   project that depends on it. See [below](#why-the-container-passes---conditions)
+   for why this is not automatic.
+2. **`apps/web/dist/index.html` is in the image**, at the path the API's
+   `web.ts` computes relative to its own compiled location. A miss here is an
+   image that answers `/api` and serves a blank page to a browser.
+3. **The compiled API loads far enough to reach its database.** The real `CMD`,
+   the real user, `NODE_ENV=production`, pointed at a port nothing is listening
+   on. It is *meant* to fail — reaching `failed to start` proves every module in
+   the graph loaded first, and anything unresolvable dies well before that line.
+   Five seconds, because `db.ts` pins `serverSelectionTimeoutMS` to 5000.
+
+What this still does not do is run the thing against a real database. The image
+is never started against a replica set anywhere in CI, so migrations, indexes
+and `/api/health` returning `200` are first exercised by a deploy.
+
+`ci.yml`, `release.yml` and `deploy.yml` all build with `cache-from: type=gha`,
+so the publishing build that follows a green `main` mostly reuses the layers CI
+already built rather than paying for them twice.
+
 ## The pipeline
 
 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml).
@@ -182,6 +217,13 @@ cannot see the hostname it is being asked to certify.
 It triggers on the **CI workflow completing successfully on `main`**, not on
 the push. That is the whole point: "deployed" cannot get ahead of "verified",
 and there is no second copy of the checks to drift out of step with the first.
+Since CI now builds the image, "verified" includes "the image builds and
+starts".
+
+That trigger matches CI by the `name:` field in `ci.yml` — the word `CI` — and
+not by its filename. Renaming the CI workflow does not break the deploy
+workflow loudly; it stops it firing at all, silently, and nothing else in the
+repository notices. Both files carry a comment saying so.
 
 1. **plan** — decides what is being deployed. A normal run takes the commit CI
    actually ran against and names it `main-<short sha>`. A manual run with an
@@ -264,6 +306,12 @@ condition that only the container turns on. Every existing consumer resolves
 exactly what it resolved before; `node --conditions=invintelx-dist` gets
 JavaScript. The flag appears in the `Dockerfile`'s `CMD` and in `apps/api`'s
 `start` script, and those two need to stay in step.
+
+This is the arrangement most likely to be broken by somebody who has no reason
+to know it exists — an innocuous edit to `packages/shared/package.json` and the
+container stops booting, while every test still passes because tests never turn
+the condition on. That is why CI's `image` job resolves the package inside the
+built image and prints the file it landed on.
 
 ## What is not here
 

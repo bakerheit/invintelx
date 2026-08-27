@@ -178,8 +178,9 @@ only.
 
 There is also a `Dockerfile` that builds the whole thing into one image — the
 API serving `/api` and the compiled web app on one port — which the release
-workflow pushes to `ghcr.io/bakerheit/invintelx` on every version tag. No tag
-has been cut since it landed, so no image has actually been published yet.
+workflow pushes to `ghcr.io/bakerheit/invintelx` on every version tag. CI builds
+and starts it on every pull request, so it is known to build; but no tag has been
+cut since it landed, so no image has actually been published yet.
 
 None of this is a supported deployment yet — see the status note at the top.
 Releases are tagged and there is a changelog to read before you move, but no

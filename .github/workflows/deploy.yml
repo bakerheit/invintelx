@@ -9,6 +9,11 @@ name: Deploy
 # has the runbook.
 on:
   workflow_run:
+    # Matched against the `name:` field of .github/workflows/ci.yml, not against
+    # its filename — that file says `name: CI` and this has to keep saying the
+    # same word. Renaming the CI workflow does not break this workflow loudly;
+    # it stops it firing, silently and for ever, and nothing else in the
+    # repository would notice. Rename one, rename both.
     workflows: [CI]
     types: [completed]
     branches: [main]

@@ -88,6 +88,12 @@ this release is on the only shape the data has ever had.
   TLS steps, the CDN cache rules and the rollback runbook are in
   [docs/deploying.md](docs/deploying.md). Nothing has been run against a real
   account yet.
+- CI builds the container image on every pull request — build only, nothing
+  published — and then runs it: the shared package must resolve to JavaScript
+  inside the image, the compiled web app must be where the API looks for it, and
+  the real entry point must load its whole module graph before failing on a
+  database that is deliberately not there. Previously nothing in the repository
+  ever built the image, so a broken one was found by a production deploy.
 
 ### Changed
 
@@ -107,10 +113,12 @@ this release is on the only shape the data has ever had.
   leaving it out and reading as "no delivery is late".
 - Dashboard figures count the active catalogue only, inventory value included.
   Stock left on an archived SKU is invisible on that screen.
-- There is a `Dockerfile`, but no image has been published yet: no version has
-  been tagged since it landed, and nobody has built or run it. It is reviewed
-  code, not a tested artefact. There is still no `docker compose up` that runs
-  the app — `docker-compose.yml` starts MongoDB for development and nothing else.
+- There is a `Dockerfile` and CI builds and starts it, but no image has been
+  published yet: no version has been tagged since it landed. Nor has the
+  container ever been run against a real database — CI starts it pointed at
+  nothing, which proves it loads and not that it serves. There is still no
+  `docker compose up` that runs the app — `docker-compose.yml` starts MongoDB
+  for development and nothing else.
 - The deploy pipeline has never deployed anything. invintelx.org has no Fly app,
   no DNS and no certificate yet; `docs/deploying.md` is the checklist for
   creating them, and it says so at the top.

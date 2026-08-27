@@ -1,3 +1,7 @@
+# This name is load-bearing beyond the checks list: .github/workflows/deploy.yml
+# triggers on `workflow_run` with `workflows: [CI]`, which matches this field and
+# not this filename. Change the word here and production stops following main,
+# without failing anything. Change both or neither.
 name: CI
 
 on:
@@ -5,7 +9,8 @@ on:
     branches: [main]
   pull_request:
   # The release workflow calls this rather than keeping a second copy of the
-  # same four checks, so "a tag was verified" means exactly what CI means.
+  # same checks, so "a tag was verified" means exactly what CI means — including,
+  # now, that the container image builds and starts.
   workflow_call:
 
 concurrency:
@@ -51,3 +56,107 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  # The only place the container is ever built before it is somebody's problem.
+  # Everything in `verify` runs on the runner with the repository checked out,
+  # so none of it touches the Dockerfile: until this job existed, the first
+  # build of the image was a merge to main and the first run of it was a
+  # production deploy.
+  #
+  # Build only — nothing is pushed from here. release.yml publishes on a version
+  # tag and deploy.yml publishes on every green main; this job exists so that a
+  # pull request which breaks the image says so while somebody is still reading
+  # it. All three share `cache-from: type=gha`, so the publish that follows a
+  # green main mostly reuses the layers this job just built.
+  #
+  # Deploy triggers on this whole workflow going green, so "deployed" now also
+  # means "the image built and started".
+  image:
+    name: Container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # `load` rather than `push`: the steps below run what was just built, and
+      # nothing here has or wants registry credentials.
+      #
+      # This is also the guard on the Dockerfile's manifest list. Its build stage
+      # primes the install layer by copying each workspace project's manifest by
+      # name, and a frozen install checks the lockfile's importers against the
+      # projects it can see — so adding `packages/anything` without adding a COPY
+      # line fails right here, on the pull request that added it. Before this job
+      # existed that mismatch was invisible until a merge to main.
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: invintelx:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Resolution first, because it is the failure the two steps below would
+      # otherwise report as something vaguer. `@invintelx/shared` publishes
+      # TypeScript by default and JavaScript only under this condition, and Node
+      # refuses a `.ts` file outright — so the import either lands on the built
+      # JavaScript or throws. Run from apps/api because that is the project that
+      # depends on it, which is where pnpm put the link and where the compiled
+      # entry point resolves it from.
+      - name: The shared package resolves to JavaScript
+        run: >
+          docker run --rm --workdir /app/apps/api invintelx:ci
+          node --conditions=invintelx-dist --input-type=module
+          -e "const s = await import('@invintelx/shared');
+          const n = Object.keys(s).length;
+          if (n === 0) throw new Error('@invintelx/shared resolved to an empty namespace');
+          console.log('@invintelx/shared loaded, ' + n + ' exports');"
+
+      # The API serves the web build from its own port, and it does that by
+      # looking next door at a path relative to its compiled self. A missing or
+      # misplaced apps/web/dist is an image that answers /api and serves a blank
+      # page for everything else.
+      - name: The web build is in the image where the API looks for it
+        run: >
+          docker run --rm invintelx:ci
+          node --input-type=module
+          -e "const { statSync } = await import('node:fs');
+          statSync('/app/apps/web/dist/index.html');
+          console.log('/app/apps/web/dist/index.html is present');"
+
+      # Boots the image exactly as production does — same CMD, same user, same
+      # NODE_ENV — pointed at a port nothing is listening on. It is expected to
+      # fail, and *where* it fails is the assertion: reaching "failed to start"
+      # means env parsing, every migration, every route and every import in the
+      # graph loaded first. A module that cannot be resolved dies well before
+      # that line, which is the regression this catches.
+      #
+      # Five seconds, not thirty: db.ts pins serverSelectionTimeoutMS to 5000.
+      - name: The compiled API loads far enough to reach its database
+        env:
+          MONGODB_URI: mongodb://127.0.0.1:1/invintelx
+          # Not a secret. It exists because env.ts refuses to boot without one,
+          # and this process never issues a session.
+          SESSION_SECRET: not-a-secret-not-a-secret-not-a-secret
+        run: |
+          set +e
+          out="$(docker run --rm \
+            -e MONGODB_URI="$MONGODB_URI" \
+            -e SESSION_SECRET="$SESSION_SECRET" \
+            invintelx:ci 2>&1)"
+          status=$?
+          set -e
+          echo "$out"
+          if [ "$status" -eq 0 ]; then
+            echo "::error title=Unexpected success::The container connected to a database that does not exist."
+            exit 1
+          fi
+          echo "$out" | grep -q 'failed to start' || {
+            echo "::error title=Image does not start::The container died before it reached its database connection, so something in the compiled output could not be loaded. The lines above are the reason."
+            exit 1
+          }
+          echo "Loaded the whole graph and failed at the database, which is the expected outcome."
