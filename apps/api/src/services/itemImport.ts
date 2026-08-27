@@ -1,6 +1,12 @@
 import { ObjectId, type AnyBulkWriteOperation } from 'mongodb';
 import type { ExistingItem, ItemImportPlan, ItemImportResult } from '@invintelx/shared';
 import { getClient, items, type ItemDoc } from '../db.js';
+import {
+  diffAuditDocuments,
+  recordAuditEvents,
+  type Actor,
+  type AuditEventInput,
+} from './audit.js';
 
 /**
  * The database half of a CSV import. All the deciding happens in
@@ -56,10 +62,22 @@ export async function loadExistingBySku(skus: string[]): Promise<Map<string, Exi
  * rows landed?" is not a question anyone should have to answer from the audit
  * log. A row the plan marked unchanged is not written at all, so re-importing
  * an unmodified export leaves every `updatedAt` alone.
+ *
+ * The audit entries ride in the same transaction. An import is the fastest way
+ * in this product to change four thousand costs at once, so it is the write
+ * that most needs a record — and one entry per row, rather than one for the
+ * file, is what makes "when did this SKU's cost change" answerable on the item
+ * itself rather than only in a list of uploads.
  */
-export async function applyItemImport(plan: ItemImportPlan): Promise<ItemImportResult> {
+export async function applyItemImport(
+  plan: ItemImportPlan,
+  actor: Actor,
+): Promise<ItemImportResult> {
   const now = new Date();
   const operations: AnyBulkWriteOperation<ItemDoc>[] = [];
+  const createdDocs: ItemDoc[] = [];
+  const updatedSkus: string[] = [];
+  const changesBySku = new Map<string, Partial<ItemDoc>>();
   let created = 0;
   let updated = 0;
   let unchanged = 0;
@@ -69,11 +87,14 @@ export async function applyItemImport(plan: ItemImportPlan): Promise<ItemImportR
     if (!row.write) continue;
 
     if (row.write.kind === 'create') {
-      operations.push({
-        insertOne: {
-          document: { _id: new ObjectId(), ...row.write.values, createdAt: now, updatedAt: now },
-        },
-      });
+      const document: ItemDoc = {
+        _id: new ObjectId(),
+        ...row.write.values,
+        createdAt: now,
+        updatedAt: now,
+      };
+      operations.push({ insertOne: { document } });
+      createdDocs.push(document);
       created += 1;
     } else {
       operations.push({
@@ -82,6 +103,8 @@ export async function applyItemImport(plan: ItemImportPlan): Promise<ItemImportR
           update: { $set: { ...row.write.changes, updatedAt: now } },
         },
       });
+      updatedSkus.push(row.write.sku);
+      changesBySku.set(row.write.sku, row.write.changes as Partial<ItemDoc>);
       updated += 1;
     }
   }
@@ -90,9 +113,49 @@ export async function applyItemImport(plan: ItemImportPlan): Promise<ItemImportR
     const session = getClient().startSession();
     try {
       await session.withTransaction(async () => {
+        /*
+         * Read the rows about to be overwritten before overwriting them, inside
+         * the transaction. The plan's view of "what exists" was taken before
+         * the preview was even shown; what the entry has to say is what this
+         * write actually replaced.
+         */
+        const before =
+          updatedSkus.length === 0
+            ? []
+            : await items()
+                .find({ sku: { $in: updatedSkus } }, { session })
+                .toArray();
+
         // Ordered: a duplicate SKU racing in from another request should stop
         // the import rather than let the rest of the file through around it.
         await items().bulkWrite(operations, { session, ordered: true });
+
+        const entries: AuditEventInput[] = createdDocs.map((doc) => ({
+          actor,
+          action: 'import' as const,
+          entityType: 'item' as const,
+          entityId: doc._id,
+          entityLabel: doc.sku,
+          changes: diffAuditDocuments({}, doc),
+        }));
+
+        for (const doc of before) {
+          const changes = changesBySku.get(doc.sku);
+          if (!changes) continue;
+          entries.push({
+            actor,
+            action: 'import',
+            entityType: 'item',
+            entityId: doc._id,
+            entityLabel: doc.sku,
+            // Diffed against the row as it will be, not against the plan's
+            // intent, so a field the file mentions but does not move records
+            // nothing.
+            changes: diffAuditDocuments(doc, { ...doc, ...changes }),
+          });
+        }
+
+        await recordAuditEvents(entries, session);
       });
     } finally {
       await session.endSession();

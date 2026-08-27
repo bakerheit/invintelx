@@ -3,6 +3,7 @@ import { AppShell } from '@/components/AppShell';
 import { ProtectedRoute, PublicOnlyRoute } from '@/features/auth/ProtectedRoute';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { RegisterPage } from '@/features/auth/RegisterPage';
+import { AuditPage } from '@/features/audit/AuditPage';
 import { ItemsPage } from '@/features/items/ItemsPage';
 import { ItemDetailPage } from '@/features/items/ItemDetailPage';
 import { MovementsPage } from '@/features/movements/MovementsPage';
@@ -33,6 +34,9 @@ export const router = createBrowserRouter([
           { path: '/items', element: <ItemsPage /> },
           { path: '/items/:id', element: <ItemDetailPage /> },
           { path: '/movements', element: <MovementsPage /> },
+          // Admin-gated inside the page rather than by a route wrapper, so a
+          // member following a link is told why instead of being bounced.
+          { path: '/audit', element: <AuditPage /> },
         ],
       },
     ],

@@ -33,4 +33,15 @@ export const queryKeys = {
     all: ['movements'] as const,
     list: (query: Record<string, unknown>) => ['movements', 'list', query] as const,
   },
+  audit: {
+    /**
+     * Prefix for both views. Every write the app makes now produces a row here,
+     * so a mutation invalidates this one key and whichever trail is on screen
+     * refetches — the same arrangement items already use for stock and history.
+     */
+    all: ['audit'] as const,
+    entity: (entityType: string, entityId: string, page: number, pageSize: number) =>
+      ['audit', 'entity', entityType, entityId, page, pageSize] as const,
+    feed: (query: Record<string, unknown>) => ['audit', 'feed', query] as const,
+  },
 } as const;

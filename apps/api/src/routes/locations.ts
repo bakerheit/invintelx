@@ -11,9 +11,11 @@ import {
 } from '@invintelx/shared';
 import { locations, type LocationDoc } from '../db.js';
 import { BadRequestError, NotFoundError } from '../errors.js';
+import { actorOf } from '../lib/actor.js';
 import { asyncHandler, parseOrThrow } from '../lib/http.js';
 import { requireRole } from '../middleware/auth.js';
 import { toLocation } from '../serializers.js';
+import { auditedInsert, auditedUpdate, LOCATION_AUDIT } from '../services/audit.js';
 
 export const locationsRouter: Router = Router();
 
@@ -116,7 +118,7 @@ locationsRouter.post(
       createdAt: now,
       updatedAt: now,
     };
-    await locations().insertOne(doc);
+    await auditedInsert(LOCATION_AUDIT, doc, actorOf(req));
     res.status(201).json(toLocation(doc));
   }),
 );
@@ -126,10 +128,16 @@ locationsRouter.patch(
   requireRole('member'),
   asyncHandler(async (req, res) => {
     const input = parseOrThrow(updateLocationInputSchema, req.body);
-    const doc = await locations().findOneAndUpdate(
+    /*
+     * Deactivating a bin is an `isActive` change like any other, so it lands in
+     * the log as one. It is the edit that quietly stops stock being movable
+     * there, which is exactly the kind of thing somebody wants a name against.
+     */
+    const doc = await auditedUpdate(
+      LOCATION_AUDIT,
       { _id: parseId(req.params.id) },
-      { $set: { ...input, updatedAt: new Date() } },
-      { returnDocument: 'after' },
+      input,
+      actorOf(req),
     );
     if (!doc) throw new NotFoundError('No location with that id');
     res.json(toLocation(doc));

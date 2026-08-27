@@ -18,9 +18,11 @@ import {
 } from '@invintelx/shared';
 import { items, type ItemDoc } from '../db.js';
 import { BadRequestError, NotFoundError } from '../errors.js';
+import { actorOf } from '../lib/actor.js';
 import { asyncHandler, parseOrThrow } from '../lib/http.js';
 import { requireRole } from '../middleware/auth.js';
 import { toItem } from '../serializers.js';
+import { auditedInsert, auditedUpdate, ITEM_AUDIT } from '../services/audit.js';
 import { applyItemImport, loadExistingBySku, MAX_IMPORT_ROWS } from '../services/itemImport.js';
 
 export const itemsRouter: Router = Router();
@@ -196,7 +198,7 @@ itemsRouter.post(
       );
     }
 
-    res.json(await applyItemImport(plan));
+    res.json(await applyItemImport(plan, actorOf(req)));
   }),
 );
 
@@ -223,8 +225,10 @@ itemsRouter.post(
       updatedAt: now,
     };
     // A duplicate SKU surfaces as a 11000 from the unique index and the error
-    // middleware turns it into a 409, so no pre-check race window here.
-    await items().insertOne(doc);
+    // middleware turns it into a 409, so no pre-check race window here. The
+    // audit entry is written in the same transaction, so a refused insert
+    // cannot leave a record of an item that does not exist.
+    await auditedInsert(ITEM_AUDIT, doc, actorOf(req));
     res.status(201).json(toItem(doc));
   }),
 );
@@ -234,10 +238,11 @@ itemsRouter.patch(
   requireRole('member'),
   asyncHandler(async (req, res) => {
     const input = parseOrThrow(updateItemInputSchema, req.body);
-    const doc = await items().findOneAndUpdate(
+    const doc = await auditedUpdate(
+      ITEM_AUDIT,
       { _id: parseId(req.params.id) },
-      { $set: { ...input, updatedAt: new Date() } },
-      { returnDocument: 'after' },
+      input,
+      actorOf(req),
     );
     if (!doc) throw new NotFoundError('No item with that id');
     res.json(toItem(doc));
@@ -253,10 +258,12 @@ itemsRouter.post(
   '/:id/archive',
   requireRole('member'),
   asyncHandler(async (req, res) => {
-    const doc = await items().findOneAndUpdate(
+    const doc = await auditedUpdate(
+      ITEM_AUDIT,
       { _id: parseId(req.params.id) },
-      { $set: { status: 'archived', updatedAt: new Date() } },
-      { returnDocument: 'after' },
+      { status: 'archived' },
+      actorOf(req),
+      { action: 'archive' },
     );
     if (!doc) throw new NotFoundError('No item with that id');
     res.json(toItem(doc));
@@ -267,10 +274,12 @@ itemsRouter.post(
   '/:id/restore',
   requireRole('member'),
   asyncHandler(async (req, res) => {
-    const doc = await items().findOneAndUpdate(
+    const doc = await auditedUpdate(
+      ITEM_AUDIT,
       { _id: parseId(req.params.id) },
-      { $set: { status: 'active', updatedAt: new Date() } },
-      { returnDocument: 'after' },
+      { status: 'active' },
+      actorOf(req),
+      { action: 'restore' },
     );
     if (!doc) throw new NotFoundError('No item with that id');
     res.json(toItem(doc));

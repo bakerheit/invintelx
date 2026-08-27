@@ -48,6 +48,16 @@ this release is on the only shape the data has ever had.
 - A supplier's catalogue: which items they supply, their own part number for
   each — kept in their casing, because it goes on the purchase order — and the
   quantity price ladder they sell it on.
+- An audit log for every change that is not a stock movement. The ledger already
+  records who moved stock and why; this records who changed a cost, a reorder
+  point, a supplier's terms, a location's status or an account's role, with the
+  value it held before and the value it took. Append-only, and written by the
+  same layer that performs the mutation and in the same transaction, so a write
+  that is refused leaves no entry and an entry cannot exist without its write.
+  Secrets are never valued: a password change is recorded as an event with no
+  before and no after. An item's own history appears on its detail page for
+  anybody who can read the item; the whole log is at `/audit` and via
+  `GET /api/audit` for administrators only.
 - Analytics over the ledger: demand series, days of cover, reorder suggestions
   and an action list of the items that need attention today.
 - A landing dashboard that ranks what needs a decision: SKUs that are out of
