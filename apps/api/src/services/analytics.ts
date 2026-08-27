@@ -1,7 +1,11 @@
 import type { ObjectId } from 'mongodb';
 import {
   DEFAULT_DEMAND_WINDOW_DAYS,
+  type AbcBand,
+  type AbcResponse,
+  type AbcRow,
   type DashboardResponse,
+  type DeadStockResponse,
   type DemandPoint,
   type ReorderSuggestion,
   type ServiceLevel,
@@ -16,28 +20,44 @@ import {
   rankStockouts,
   toDeadStockRow,
 } from './dashboardRank.js';
+import { classifyAbc, summariseAbc } from './abc.js';
 
 // Re-exported so callers have one import site for the analytics surface.
 export { statsFromSeries, suggestReorder } from './demand.js';
 
 /**
- * Daily demand per item over a window.
+ * What counts as consumption in a window, in one place.
  *
  * Demand means issues and only issues. A transfer relocates stock and an
  * adjustment corrects a record; treating either as consumption would inflate
  * every forecast downstream.
+ *
+ * The daily series and the ABC totals group this differently but must never
+ * disagree about which rows they are grouping, so the filter is written once.
  */
+function issuedInWindow(
+  itemIds: ObjectId[],
+  windowDays: number,
+  now: Date,
+): Record<string, unknown> {
+  return {
+    itemId: { $in: itemIds },
+    type: 'issue',
+    occurredAt: { $gte: windowStart(windowDays, now) },
+  };
+}
+
+/** Daily demand per item over a window. */
 export async function demandByItem(
   itemIds: ObjectId[],
   windowDays: number,
   now = new Date(),
 ): Promise<Map<string, DemandPoint[]>> {
   if (itemIds.length === 0) return new Map();
-  const start = windowStart(windowDays, now);
 
   const rows = await movements()
     .aggregate<{ _id: { itemId: ObjectId; day: string }; quantity: number }>([
-      { $match: { itemId: { $in: itemIds }, type: 'issue', occurredAt: { $gte: start } } },
+      { $match: issuedInWindow(itemIds, windowDays, now) },
       {
         $group: {
           _id: {
@@ -63,6 +83,52 @@ export async function demandByItem(
 }
 
 /**
+ * Total units issued per item over a window — the same rows `demandByItem`
+ * reads, grouped only by item.
+ *
+ * Summing the daily series would give the same answer, but a catalogue-wide
+ * ABC report would then carry one row per item per day back from the database
+ * to add it up here. This asks Mongo for the total it is already computing.
+ */
+export async function issuedUnitsByItem(
+  itemIds: ObjectId[],
+  windowDays: number,
+  now = new Date(),
+): Promise<Map<string, number>> {
+  if (itemIds.length === 0) return new Map();
+
+  const rows = await movements()
+    .aggregate<{ _id: ObjectId; quantity: number }>([
+      { $match: issuedInWindow(itemIds, windowDays, now) },
+      // Issues are stored negative; consumption is the magnitude consumed.
+      { $group: { _id: '$itemId', quantity: { $sum: { $abs: '$quantity' } } } },
+    ])
+    .toArray();
+
+  return new Map(rows.map((row) => [row._id.toHexString(), row.quantity]));
+}
+
+/**
+ * On-hand per item, summed across every location it sits in.
+ *
+ * Every report here asks the catalogue-wide question rather than the per-bin
+ * one, so the sum is written once: four copies of this pipeline is four places
+ * for "how much have we got" to drift apart.
+ */
+export async function onHandByItem(itemIds: ObjectId[]): Promise<Map<string, number>> {
+  if (itemIds.length === 0) return new Map();
+
+  const rows = await stockLevels()
+    .aggregate<{ _id: ObjectId; onHand: number }>([
+      { $match: { itemId: { $in: itemIds } } },
+      { $group: { _id: '$itemId', onHand: { $sum: '$onHand' } } },
+    ])
+    .toArray();
+
+  return new Map(rows.map((row) => [row._id.toHexString(), row.onHand]));
+}
+
+/**
  * The SKUs worth acting on today, worst first.
  *
  * Ranked by days of cover ascending, because that is the honest measure of how
@@ -85,22 +151,15 @@ export async function buildActionList(options: {
   if (activeItems.length === 0) return { suggestions: [], itemsConsidered: 0 };
 
   const itemIds = activeItems.map((i) => i._id);
-  const [demand, levels] = await Promise.all([
+  const [demand, onHand] = await Promise.all([
     demandByItem(itemIds, windowDays, now),
-    stockLevels()
-      .aggregate<{ _id: ObjectId; onHand: number }>([
-        { $match: { itemId: { $in: itemIds } } },
-        { $group: { _id: '$itemId', onHand: { $sum: '$onHand' } } },
-      ])
-      .toArray(),
+    onHandByItem(itemIds),
   ]);
-
-  const onHandByItem = new Map(levels.map((row) => [row._id.toHexString(), row.onHand]));
 
   const suggestions = activeItems.map((item) => {
     const key = item._id.toHexString();
     const stats = statsFromSeries(key, demand.get(key) ?? [], windowDays, now);
-    return suggestReorder(item, stats, onHandByItem.get(key) ?? 0, options.leadTimeDays, options.serviceLevel);
+    return suggestReorder(item, stats, onHand.get(key) ?? 0, options.leadTimeDays, options.serviceLevel);
   });
 
   // The comparator lives in dashboardRank.ts so the dashboard's below-reorder
@@ -191,27 +250,20 @@ export async function buildDashboard(options: {
   const activeItems = await items().find({ status: 'active' }).toArray();
   const itemIds = activeItems.map((i) => i._id);
 
-  const [demand, levels, lastIssued, volumeSeries] = await Promise.all([
+  const [demand, onHandTotals, lastIssued, volumeSeries] = await Promise.all([
     demandByItem(itemIds, options.windowDays, now),
-    stockLevels()
-      .aggregate<{ _id: ObjectId; onHand: number }>([
-        { $match: { itemId: { $in: itemIds } } },
-        { $group: { _id: '$itemId', onHand: { $sum: '$onHand' } } },
-      ])
-      .toArray(),
+    onHandByItem(itemIds),
     lastIssuedByItem(itemIds),
     // Independent of the catalogue: the ledger is still worth showing when
     // every item has been archived.
     movementVolume(options.windowDays, now),
   ]);
 
-  const onHandByItem = new Map(levels.map((row) => [row._id.toHexString(), row.onHand]));
-
   const suggestions: ReorderSuggestion[] = [];
   const deadStockRows = [];
   for (const item of activeItems) {
     const key = item._id.toHexString();
-    const onHand = onHandByItem.get(key) ?? 0;
+    const onHand = onHandTotals.get(key) ?? 0;
     const stats = statsFromSeries(key, demand.get(key) ?? [], options.windowDays, now);
     suggestions.push(
       suggestReorder(item, stats, onHand, options.leadTimeDays, options.serviceLevel),
@@ -249,5 +301,108 @@ export async function buildDashboard(options: {
       totalUnits: volumeSeries.reduce((sum, point) => sum + point.quantity, 0),
       series: volumeSeries,
     },
+  };
+}
+
+/** The dead stock report, minus the timestamp the route stamps on. */
+export type DeadStockSnapshot = Omit<DeadStockResponse, 'generatedAt'>;
+
+/**
+ * Every SKU holding stock nobody has issued in a while, most capital first.
+ *
+ * The same rows the dashboard shortlists, at report length and with the window
+ * as a parameter rather than a default. The dashboard asks "is there a dead
+ * stock problem"; this is the list somebody works through to fix it, so the
+ * limit is high and `total` and `valueCents` are stated across the whole set
+ * rather than the page — the capital tied up is the headline, and a headline
+ * that changed when somebody paged would be a lie.
+ *
+ * Archived items are excluded, exactly as they are on the dashboard. Stock
+ * stranded on an archived SKU is a real problem and a different one: writing
+ * off a SKU nobody can transact against is not the same job as turning over one
+ * that is still live.
+ */
+export async function buildDeadStockReport(options: {
+  deadStockDays: number;
+  limit: number;
+  now?: Date;
+}): Promise<DeadStockSnapshot> {
+  const now = options.now ?? new Date();
+  const activeItems = await items().find({ status: 'active' }).toArray();
+  const itemIds = activeItems.map((i) => i._id);
+
+  const [onHand, lastIssued] = await Promise.all([
+    onHandByItem(itemIds),
+    lastIssuedByItem(itemIds),
+  ]);
+
+  const rows = activeItems.map((item) => {
+    const key = item._id.toHexString();
+    return toDeadStockRow(item, onHand.get(key) ?? 0, lastIssued.get(key) ?? null, now);
+  });
+
+  // The same filter and comparator the dashboard uses, so the two screens
+  // cannot disagree about which SKUs are dead or in what order.
+  const dead = rankDeadStock(rows, options.deadStockDays);
+
+  return {
+    deadStockDays: options.deadStockDays,
+    itemsConsidered: activeItems.length,
+    total: dead.length,
+    valueCents: dead.reduce((sum, row) => sum + row.valueOnHandCents, 0),
+    rows: dead.slice(0, options.limit),
+  };
+}
+
+/** The ABC report, minus the timestamp the route stamps on. */
+export type AbcSnapshot = Omit<AbcResponse, 'generatedAt'>;
+
+/**
+ * The active catalogue ranked by annual consumption value and cut into bands.
+ *
+ * Every active SKU is classified, including the ones that consumed nothing —
+ * they are the C tail, and a classification that quietly dropped them would
+ * understate how long that tail is, which is the single most useful thing an
+ * ABC report says. The band filter narrows what is returned, never what is
+ * counted: `bands` and `itemsConsidered` are always the whole catalogue.
+ */
+export async function buildAbcReport(options: {
+  windowDays: number;
+  aPercent: number;
+  bPercent: number;
+  band?: AbcBand;
+  limit: number;
+  now?: Date;
+}): Promise<AbcSnapshot> {
+  const now = options.now ?? new Date();
+  const activeItems = await items().find({ status: 'active' }).toArray();
+  const itemIds = activeItems.map((i) => i._id);
+
+  const issued = await issuedUnitsByItem(itemIds, options.windowDays, now);
+
+  const classified: AbcRow[] = classifyAbc(
+    activeItems.map((item) => ({
+      item,
+      unitsIssued: issued.get(item._id.toHexString()) ?? 0,
+    })),
+    options,
+  );
+
+  const selected = options.band
+    ? classified.filter((row) => row.band === options.band)
+    : classified;
+
+  return {
+    windowDays: options.windowDays,
+    aPercent: options.aPercent,
+    bPercent: options.bPercent,
+    itemsConsidered: classified.length,
+    annualConsumptionValueCents: classified.reduce(
+      (sum, row) => sum + row.annualConsumptionValueCents,
+      0,
+    ),
+    bands: summariseAbc(classified),
+    total: selected.length,
+    rows: selected.slice(0, options.limit),
   };
 }
