@@ -89,6 +89,11 @@ export function ItemDialog({ open, onOpenChange, item, onSaved }: ItemDialogProp
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField
               label="SKU"
+              // Focus moves into the dialog on open, per the ARIA dialog
+              // pattern - not a page grabbing focus on load, which is what
+              // no-autofocus exists to stop. Only when creating: an edit opens
+              // on a filled form, where landing on SKU says "retype this".
+              // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus={!isEdit}
               placeholder="BOLT-M6-30"
               error={errors.sku?.message}

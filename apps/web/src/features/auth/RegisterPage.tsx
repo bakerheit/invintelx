@@ -82,7 +82,6 @@ export function RegisterPage() {
         <FormField
           label="Name"
           autoComplete="name"
-          autoFocus
           error={errors.name?.message}
           {...register('name')}
         />
