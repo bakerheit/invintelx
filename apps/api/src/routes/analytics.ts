@@ -2,10 +2,14 @@ import { Router } from 'express';
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
 import {
+  abcQuerySchema,
+  abcResponseSchema,
   actionListQuerySchema,
   actionListResponseSchema,
   dashboardQuerySchema,
   dashboardResponseSchema,
+  deadStockQuerySchema,
+  deadStockResponseSchema,
   demandStatsSchema,
   objectIdSchema,
   reorderSuggestionSchema,
@@ -14,8 +18,10 @@ import { items, stockLevels } from '../db.js';
 import { NotFoundError } from '../errors.js';
 import { asyncHandler, parseOrThrow } from '../lib/http.js';
 import {
+  buildAbcReport,
   buildActionList,
   buildDashboard,
+  buildDeadStockReport,
   demandByItem,
   statsFromSeries,
   suggestReorder,
@@ -62,6 +68,34 @@ analyticsRouter.get(
         items: suggestions,
       }),
     );
+  }),
+);
+
+/**
+ * The catalogue by annual consumption value, banded A/B/C.
+ *
+ * Literal segment, declared before `/demand/:itemId` for readability only.
+ */
+analyticsRouter.get(
+  '/abc',
+  asyncHandler(async (req, res) => {
+    const query = parseOrThrow(abcQuerySchema, req.query);
+    const snapshot = await buildAbcReport(query);
+
+    // Validating our own response catches contract drift here rather than as a
+    // confusing parse failure in the browser.
+    res.json(abcResponseSchema.parse({ generatedAt: new Date().toISOString(), ...snapshot }));
+  }),
+);
+
+/** Stock nobody has issued in the window, and the capital sitting in it. */
+analyticsRouter.get(
+  '/dead-stock',
+  asyncHandler(async (req, res) => {
+    const query = parseOrThrow(deadStockQuerySchema, req.query);
+    const snapshot = await buildDeadStockReport(query);
+
+    res.json(deadStockResponseSchema.parse({ generatedAt: new Date().toISOString(), ...snapshot }));
   }),
 );
 
