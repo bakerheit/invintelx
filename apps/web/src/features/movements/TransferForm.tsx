@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/features/auth/FormField';
 import { useItemStock } from '@/features/items/api';
 import { FormCard, FormError, NegativeStockNotice, PostedResult } from './FormParts';
+import { ItemScanner } from './ItemScanner';
 import { BinPicker, ItemPicker } from './pickers';
 import { applyServerErrors } from './formErrors';
 import { emptyTransferForm, transferFormSchema, type TransferFormValues } from './movementForms';
@@ -38,6 +39,7 @@ export function TransferForm() {
     reset,
     setValue,
     setError,
+    setFocus,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<TransferFormValues>({
@@ -74,6 +76,13 @@ export function TransferForm() {
     setValue('toLocationId', next?.id ?? '', { shouldValidate: Boolean(next) });
   };
 
+  /** See the note in MoveForm: a scan chooses the item and hands over the number. */
+  const scanned = (next: Item) => {
+    chooseItem(next);
+    setValue('quantity', '');
+    setFocus('quantity');
+  };
+
   const onSubmit = handleSubmit(async (values) => {
     try {
       const result = await transfer.mutateAsync({
@@ -108,6 +117,8 @@ export function TransferForm() {
   return (
     <FormCard title="Transfer" description="Move stock from one bin to another. Total on hand does not change.">
       <form onSubmit={onSubmit} className="grid gap-4" noValidate>
+        <ItemScanner onItem={scanned} />
+
         <ItemPicker value={item} onChange={chooseItem} error={errors.itemId?.message} />
 
         <div className="grid gap-4 sm:grid-cols-2">
