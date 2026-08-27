@@ -76,47 +76,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # There is no Dockerfile in this repository yet. Failing every release
-      # until there is would block tagging entirely, and quietly publishing
-      # nothing would let a release claim an image it does not have - so say it
-      # out loud in the run summary and carry on.
-      - name: Is there an image to build?
-        id: dockerfile
-        run: |
-          if [ -f Dockerfile ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::warning title=No image published::${{ needs.check.outputs.version }} was released without a container image: there is no Dockerfile in the repository yet."
-            {
-              echo "### No container image for ${{ needs.check.outputs.version }}"
-              echo
-              echo "There is no \`Dockerfile\` in this repository yet, so nothing was pushed to \`ghcr.io/${{ github.repository }}\`."
-              echo "The release itself is real - it is a tag, a changelog entry and a GitHub release you can build from source."
-              echo
-              echo "This job starts publishing on its own once a \`Dockerfile\` exists. See \`docs/releasing.md\`."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
       - name: Set up Buildx
-        if: steps.dockerfile.outputs.present == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: steps.dockerfile.outputs.present == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # An unconditional step now that there is a Dockerfile. Until there was
+      # one, this job skipped itself and wrote a warning into the run summary
+      # rather than failing every tag; a release that publishes nothing is no
+      # longer a state this repository can be in.
       - name: Build and push
-        if: steps.dockerfile.outputs.present == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: ${{ needs.check.outputs.image-tags }}
+          # AGPL section 13, baked into the web bundle at build time. It has to
+          # name the repository this image was actually built from, so a fork
+          # that publishes its own image offers its own source and not ours.
+          build-args: |
+            VITE_SOURCE_URL=https://github.com/${{ github.repository }}
           labels: |
             org.opencontainers.image.title=InvIntelX
             org.opencontainers.image.version=${{ needs.check.outputs.version }}

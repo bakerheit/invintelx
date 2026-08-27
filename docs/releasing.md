@@ -109,18 +109,28 @@ completely or does not happen:
 Nothing here force-pushes a tag or moves one. A published version is immutable:
 if a release is wrong, the fix is the next patch version, not a moved tag.
 
-### The image step is not finished yet
+### What the image contains
 
-There is no `Dockerfile` in this repository yet. Until there is, the image job
-does not fail the release — it writes a warning into the run summary saying no
-image was published, and the release is otherwise real. When the Dockerfile
-lands the job starts publishing with no change to this workflow.
+[`Dockerfile`](../Dockerfile) builds the workspace and ships only what runs it:
+the compiled API, the built web assets, and production dependencies. No pnpm, no
+TypeScript, no vite, and a non-root user. It is the only artefact an operator
+needs — [`deploy/docker-compose.yml`](../deploy/docker-compose.yml) pulls it and
+adds a database.
 
-So today a release means "a tag, a changelog entry, and a GitHub release you can
-build from source". It does not yet mean "an image you can pull", and the
-changelog's *Known limitations* says so.
+The image job pushes it unconditionally, so a release that publishes no image is
+not a state this repository can be in. Two things worth knowing before you tag:
 
-Two other things a supported upgrade path needs are also not here yet: schema
-migrations with a recorded database version, and an upgrade exercised in CI
-across a real version boundary. Until that second one exists, whether skipping
+- **The AGPL §13 source offer is compiled in.** The workflow passes
+  `VITE_SOURCE_URL=https://github.com/<this repository>` as a build argument. A
+  fork that publishes its own image therefore offers its own source, and one
+  that pulls ours and modifies it offers nothing — modifying InvIntelX and
+  serving it means rebuilding the image.
+- **`.github/workflows/image.yml` is what proves the thing works.** It builds
+  the image on every pull request, boots the compose stack, and checks that
+  `/api/health` answers `ok` with a real database behind it and that the web app
+  is served from the same origin. A Dockerfile that compiles but produces a
+  container that cannot boot fails there rather than at a tag.
+
+One thing a supported upgrade path still needs is not here: an upgrade exercised
+in CI across a real version boundary. Until that exists, whether skipping
 versions is allowed is undecided — and undecided means do not skip.

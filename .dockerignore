@@ -1,0 +1,32 @@
+# The image builds the workspace from source inside the builder stage, so the
+# only things the context needs are sources and manifests. Everything below is
+# either rebuilt, secret, or actively harmful to copy.
+
+# Rebuilt inside the image. Copying a host build would also drag in whatever
+# platform the host is - and in a worktree, node_modules is a symlink, which
+# copies as a dangling link and takes the dependency tree with it.
+node_modules
+**/node_modules
+dist
+**/dist
+*.tsbuildinfo
+coverage
+.vite
+.turbo
+
+# Never. A stray .env in the context becomes a layer, and a layer is forever
+# even if a later step deletes the file.
+.env
+.env.*
+
+# Nothing in the build reads these, and a changed one should not bust a layer.
+.git
+.github
+.mongo-data
+docs
+deploy
+*.md
+.DS_Store
+*.log
+.claude
+.coregoo

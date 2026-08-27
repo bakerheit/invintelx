@@ -1,0 +1,86 @@
+# InvIntelX, production. Copy this directory (or just these two files) onto a
+# host, fill in .env, and:
+#
+#     cp .env.example .env    # then edit it — SESSION_SECRET and WEB_ORIGIN
+#     docker compose up -d
+#
+# You do not need a clone of the repository: the app is a published image and
+# this file pulls it. Upgrading is changing INVINTELX_IMAGE and running
+# `docker compose up -d` again.
+#
+# This is NOT the development database stack at ../docker-compose.yml, and the
+# separation is the point. That one publishes 27017 on the host and is seeded
+# with demo data; this one keeps Mongo on a private network with no port of its
+# own. A demo database holding real inventory is a hard morning.
+
+name: invintelx
+
+services:
+  app:
+    # Pin a version rather than tracking :latest once you have an instance you
+    # care about — the changelog tells you what a move costs before you make it.
+    image: ${INVINTELX_IMAGE:-ghcr.io/bakerheit/invintelx:latest}
+    restart: unless-stopped
+
+    # The API runs its migrations before it listens, so it must not start until
+    # the replica set below is initiated. The image's own HEALTHCHECK is what
+    # makes `docker compose up --wait` mean "InvIntelX is answering".
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+    # Everything the operator chooses. A missing SESSION_SECRET is a boot
+    # failure with a readable message rather than an instance with guessable
+    # sessions; the same goes for every other variable the API validates.
+    env_file:
+      - .env
+
+    # The three this file owns, because they describe the stack's topology
+    # rather than a choice: setting them in .env would have no effect.
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      MONGODB_URI: mongodb://mongo:27017/${MONGODB_DB:-invintelx}?replicaSet=rs0
+
+    # Bound to loopback. Put your TLS terminator (Caddy, nginx) in front of it
+    # on the host — the API speaks plain HTTP and has no business being the
+    # thing the internet connects to. Change to '3001:3001' only if something
+    # else is already terminating TLS in front of this host.
+    ports:
+      - '127.0.0.1:3001:3001'
+
+  mongo:
+    image: mongo:8
+    restart: unless-stopped
+    # Single-node replica set: the stock movement ledger writes a movement and
+    # its projection in one transaction, and transactions require a replica set.
+    command: ['--replSet', 'rs0', '--bind_ip_all']
+    volumes:
+      - mongo-data:/data/db
+
+    # No `ports`. Mongo is reachable from the app over the compose network and
+    # from nowhere else. See docs/backup-and-restore.md for how to get a dump
+    # out without publishing the port.
+
+    healthcheck:
+      # Doubles as the initiator — the first successful check bootstraps rs0.
+      #
+      # The member host is `mongo:27017`, not `localhost`, and that difference
+      # matters here in a way it does not in the dev file. A replica set
+      # advertises its member addresses to clients, so a set initiated as
+      # `localhost` tells the app container to connect to *itself* and the
+      # driver never finds a primary.
+      test: >
+        mongosh --quiet --eval "
+          try { rs.status().ok }
+          catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok }
+        "
+      interval: 5s
+      timeout: 30s
+      start_period: 5s
+      retries: 30
+
+volumes:
+  # Named, and namespaced by the `name:` above, so it cannot collide with the
+  # development stack's volume even on the same host.
+  mongo-data:

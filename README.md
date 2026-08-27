@@ -6,11 +6,13 @@ which items actually need attention today.
 The hosted instance is [invintelx.org](https://invintelx.org).
 
 **You may run your own.** The AGPL grants you that right and this project has no
-interest in obstructing it. What we do not yet offer is a *supported* self-host
-story — there is no published image, no proven upgrade path and no promise that
-a deployment question gets answered. Running it is allowed and documented;
-operating it is currently your problem. If that changes it will be because
-people actually did it.
+interest in obstructing it. There is a published image and a compose file that
+runs the whole thing — see [Running it with Docker](#running-it-with-docker).
+What we do not yet offer is a *supported* self-host story: no upgrade has been
+proven across a version boundary, and no promise is made that a deployment
+question gets answered. Running it is allowed and documented; operating it is
+currently your problem. If that changes it will be because people actually did
+it.
 
 Releases are semver tags cut from `main`, and every one of them says what breaks
 and what it will do to your database on first boot: see
@@ -114,22 +116,79 @@ log; `FIRST_ADMIN_SETUP=open` turns the gate off entirely and hands the instance
 to the first registration, which is what a public sign-up product like
 invintelx.org wants and nothing else should.
 
-## Running it outside a dev checkout
+## Running it with Docker
 
-Vite is a development server and is not the answer in production. Instead the
-API serves the built web app itself:
+The shortest path to a running instance, and the one that does not need a clone
+of this repository. Take [`deploy/docker-compose.yml`](deploy/docker-compose.yml)
+and [`deploy/.env.example`](deploy/.env.example), put them in a directory
+together, and:
 
 ```bash
-pnpm build                        # builds apps/web/dist and apps/api/dist
-NODE_ENV=production node apps/api/dist/index.js
+cp .env.example .env    # then set SESSION_SECRET and WEB_ORIGIN
+docker compose up -d
 ```
 
-> **Known issue.** That second command does not work yet, for a reason that has
-> nothing to do with serving the frontend: `packages/shared` declares
-> `./src/index.ts` as its entry point and emits no JavaScript, so the compiled
-> API asks Node to import a TypeScript file and Node refuses. Development is
-> unaffected — `tsx` transpiles it. Packaging a runnable build is tracked
-> separately.
+That starts two containers: InvIntelX on `127.0.0.1:3001`, and a MongoDB
+replica set on a private network with no published port. The app waits for the
+database to be ready before it boots, runs its migrations, and then serves both
+the API and the web app on the one port. Put a TLS terminator in front of it —
+see [below](#putting-a-reverse-proxy-in-front).
+
+The instance has no administrator yet, and it will not hand itself to whoever
+finds it first. Read the setup token out of the log and register with it:
+
+```bash
+docker compose logs app | grep -A1 'setup token'
+```
+
+Upgrading is changing the tag in `.env` and running `docker compose up -d`
+again. Read the [changelog](CHANGELOG.md) for the versions you are stepping
+over first — it says what breaks and what will run against your database.
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+The image is published to `ghcr.io/bakerheit/invintelx` on every release, tagged
+with the version and — for a full release, never a pre-release — the rolling
+`:1.2`, `:1` and `:latest`. It is a single process: the API, the built web
+assets and their production dependencies, running as a non-root user, with a
+healthcheck against `/api/health` that reports unhealthy when the database is
+unreachable rather than pretending a degraded instance is serving.
+
+**Building your own** — necessary if you modify InvIntelX and serve it to other
+people, because the AGPL §13 source offer is compiled into the web bundle:
+
+```bash
+docker build --build-arg VITE_SOURCE_URL=https://your.host/your-fork -t invintelx .
+```
+
+The development database at [`docker-compose.yml`](docker-compose.yml) in the
+repository root is a *different stack* and starts Mongo alone. Keep them apart:
+conflating them is how a demo database ends up holding real inventory.
+
+## Running it outside a dev checkout
+
+Docker is not compulsory. Vite is a development server and is not the answer in
+production either, so instead the API serves the built web app itself:
+
+```bash
+pnpm build                                  # builds apps/web/dist and apps/api/dist
+NODE_ENV=production pnpm --filter @invintelx/api start
+```
+
+> **The `--conditions=production` flag matters.** `pnpm start` passes it for
+> you; run Node by hand and you need it too:
+>
+> ```bash
+> NODE_ENV=production node --conditions=production apps/api/dist/index.js
+> ```
+>
+> `packages/shared` exports its TypeScript source by default, which is what
+> `tsx` and vite want in a dev checkout and what lets an edit to the contract
+> show up without a rebuild. Node cannot load TypeScript, so the compiled API
+> asks for the `production` condition and gets `packages/shared/dist` instead.
+> Without the flag it asks Node to import a `.ts` file and Node refuses.
 
 One process, one port, one origin. `/api/*` is the API; everything else is
 answered from `apps/web/dist`, falling through to `index.html` so that
@@ -173,13 +232,15 @@ which is not currently wired up.
 In that arrangement the API will still serve its own copy of the assets if
 `apps/web/dist` happens to sit next to it, which is harmless — the proxy never
 asks it to. If you would rather it did not, build only the API with
-`pnpm --filter @invintelx/api build` and it will log that it is serving `/api`
-only.
+`pnpm --filter "@invintelx/api..." build` and it will log that it is serving
+`/api` only. The trailing `...` is not a typo: it pulls in `packages/shared`,
+which the compiled API needs as JavaScript.
 
 None of this is a supported deployment yet — see the status note at the top.
-Releases are tagged and there is a changelog to read before you move, but there
-is no published image and no upgrade that has been proven across a version
-boundary. It is how you run it today, honestly described.
+There is a published image, tagged releases and a changelog to read before you
+move, but no upgrade has been proven across a version boundary and no
+deployment question is promised an answer. It is how you run it today, honestly
+described.
 
 ### Backups
 

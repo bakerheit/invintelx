@@ -1,5 +1,9 @@
 # Local development database only. invintelx.org runs on managed Mongo;
 # this exists so a fresh clone has something to talk to.
+#
+# It starts Mongo and nothing else, on a published port, with no app in front
+# of it. To run InvIntelX itself, use deploy/docker-compose.yml — a separate
+# stack on purpose, so a demo database cannot end up holding real inventory.
 services:
   mongo:
     image: mongo:8

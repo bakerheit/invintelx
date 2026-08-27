@@ -5,6 +5,19 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./apps/web/src', import.meta.url)),
+      /*
+       * packages/shared has two entry points: its TypeScript source, and the
+       * JavaScript it compiles to for the container image, which Node picks up
+       * under the `production` condition. The suite always takes the source.
+       *
+       * Explicit rather than left to Vite's condition defaults for the same
+       * reason `webAssets` ignores a stray dist in development: a build lying
+       * around must not change what the tests exercise. CI also runs `test`
+       * before `build`, so here that directory does not exist at all.
+       */
+      '@invintelx/shared': fileURLToPath(
+        new URL('./packages/shared/src/index.ts', import.meta.url),
+      ),
     },
   },
   test: {

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/index.js",
+    "start": "node --conditions=production dist/index.js",
     "typecheck": "tsc --noEmit",
     "seed": "tsx src/seed.ts",
     "reconcile": "tsx src/reconcile.ts",

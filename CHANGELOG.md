@@ -60,14 +60,32 @@ this release is on the only shape the data has ever had.
   non-zero if they disagree — which is what a dump taken without a consistent
   snapshot leaves behind. `pnpm db:rebuild` does that, recomputes, and checks
   again. See [docs/backup-and-restore.md](docs/backup-and-restore.md).
+- A container image, published to `ghcr.io/bakerheit/invintelx` on every
+  release, and a compose file that runs the whole application — not just its
+  database. `docker compose up -d` in a directory holding
+  `deploy/docker-compose.yml` and a filled-in `.env` gets you an instance on
+  `127.0.0.1:3001` with its own MongoDB replica set, which is never published to
+  the host. The image is one process running as a non-root user, with a
+  healthcheck against `/api/health` that reports unhealthy — not merely
+  degraded — when the database is unreachable. The development stack at
+  `docker-compose.yml` is unchanged and deliberately separate.
+- `packages/shared` now compiles to JavaScript for a deployment, alongside the
+  TypeScript source a dev checkout uses. Node picks the compiled form up under
+  the `production` condition, which is what makes `node --conditions=production
+  apps/api/dist/index.js` run at all; without it Node was being asked to import
+  a `.ts` file. Nothing changes for `pnpm dev`, and an edit to the contract
+  still needs no rebuild.
 - Licensed AGPL-3.0-or-later, with the section 13 source offer the licence
   requires wired into the running app via `VITE_SOURCE_URL`. Point it at your
   own source if you modify InvIntelX and serve it to other people.
 
 ### Known limitations
 
-- No published container image and no `docker compose up` that runs the app —
-  `docker-compose.yml` starts MongoDB for development and nothing else.
+- MongoDB in the production compose stack runs without authentication. It is
+  reachable only from the app over a private network and publishes no port, so
+  nothing outside the stack can reach it — but anything that does get onto that
+  network has the database. Enabling auth on a replica set needs a keyfile for
+  internal authentication, which is not wired up.
 - No upgrade has been exercised across a version boundary, because there is no
   earlier version to exercise it from. Whether skipping versions will be
   allowed is not decided yet.
