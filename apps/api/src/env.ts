@@ -127,12 +127,35 @@ export function parseEnv(source: NodeJS.ProcessEnv): EnvResult {
   };
 }
 
+/**
+ * The text a refused environment prints, which is the entirety of what anyone
+ * ever sees of this file. Pure and exported for the same reason `parseEnv` is:
+ * the boot path calls `process.exit` immediately after, so a test can reach this
+ * message no other way.
+ *
+ * Production gets a different pointer. `.env.example` is the right answer to
+ * "what do I put in my .env", and the wrong answer to the case this is actually
+ * for - a container that just exited on a host that was never given a secret,
+ * read by somebody scrolling a deploy log with no checkout in front of them.
+ * docs/atlas.md is the page that lists the production set and says where it
+ * comes from.
+ */
+export function formatEnvProblems(problems: string[], nodeEnv: string | undefined): string {
+  const issues = problems.map((p) => `  - ${p}`).join('\n');
+  const pointer =
+    nodeEnv === 'production'
+      ? 'See docs/atlas.md, "What the API needs in its environment", for the full production set\n' +
+        'and how each value reaches the container.'
+      : 'See .env.example.';
+
+  return `Invalid environment configuration:\n${issues}\n\n${pointer}`;
+}
+
 /** Parsed once at import, so a bad environment stops the boot and not a request. */
 const result = parseEnv(process.env);
 
 if (!result.ok) {
-  const issues = result.problems.map((p) => `  - ${p}`).join('\n');
-  console.error(`Invalid environment configuration:\n${issues}\n\nSee .env.example.`);
+  console.error(formatEnvProblems(result.problems, process.env.NODE_ENV));
   process.exit(1);
 }
 

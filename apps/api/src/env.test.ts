@@ -9,6 +9,7 @@ import type { EnvResult } from './env.js';
  * production without being deployed to one.
  */
 let parseEnv: (source: NodeJS.ProcessEnv) => EnvResult;
+let formatEnvProblems: (problems: string[], nodeEnv: string | undefined) => string;
 
 const VALID_SECRET = 'test-secret-that-is-definitely-long-enough';
 
@@ -17,7 +18,7 @@ beforeAll(async () => {
   process.env.MONGODB_URI = 'mongodb://127.0.0.1:27017/unused';
   process.env.SESSION_SECRET = VALID_SECRET;
 
-  ({ parseEnv } = await import('./env.js'));
+  ({ parseEnv, formatEnvProblems } = await import('./env.js'));
 });
 
 /** A minimal environment that parses, before whatever a test is varying. */
@@ -101,5 +102,39 @@ describe('MONGODB_DB', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.env.MONGODB_DB).toBe('invintelx_staging');
+  });
+});
+
+/*
+ * The message is the whole of the user interface here. A container that exits at
+ * boot leaves one paragraph in a deploy log, and whether that paragraph names the
+ * variable and where its value comes from decides whether the next person fixes
+ * it in a minute or an hour.
+ */
+describe('the message a refused environment prints', () => {
+  it('lists every problem, one per line', () => {
+    const text = formatEnvProblems(['MONGODB_DB: missing', 'SESSION_SECRET: too short'], 'test');
+
+    expect(text).toContain('  - MONGODB_DB: missing');
+    expect(text).toContain('  - SESSION_SECRET: too short');
+  });
+
+  it('points at .env.example outside production, where there is a checkout to open', () => {
+    const text = formatEnvProblems(['MONGODB_URI: missing'], 'development');
+
+    expect(text).toContain('.env.example');
+    expect(text).not.toContain('docs/atlas.md');
+  });
+
+  /*
+   * The production case has no checkout and no .env - the values arrive from the
+   * host's secret store - so pointing there is a dead end for the one reader who
+   * will actually hit this.
+   */
+  it('points at the Atlas runbook in production, where the values come from a secret store', () => {
+    const text = formatEnvProblems(['MONGODB_DB: missing'], 'production');
+
+    expect(text).toContain('docs/atlas.md');
+    expect(text).not.toContain('.env.example');
   });
 });

@@ -83,9 +83,13 @@ this release is on the only shape the data has ever had.
   string rather than a bare hostname.
 - [docs/atlas.md](docs/atlas.md) — how the hosted instance's database is
   configured: one cluster with a database per environment, a `readWrite` user
-  scoped to one database each, an IP allowlist that is not `0.0.0.0/0`, and
-  provider snapshots that are only a backup once `pnpm db:verify` has been run
-  against a restore of one. The cluster does not exist yet; the page says so.
+  scoped to one database each, an IP allowlist that is not `0.0.0.0/0`, a region
+  chosen to match wherever the API runs, and provider snapshots that are only a
+  backup once `pnpm db:verify` has been run against a restore of one. It also
+  says which of those variables reach the container as committed configuration
+  and which have to come from the host's secret store before the first deploy,
+  because the boot rule above turns a forgotten one into a failed release rather
+  than a quiet mistake. The cluster does not exist yet; the page says so.
 - Licensed AGPL-3.0-or-later, with the section 13 source offer the licence
   requires wired into the running app via `VITE_SOURCE_URL`. Point it at your
   own source if you modify InvIntelX and serve it to other people.
