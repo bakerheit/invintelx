@@ -78,7 +78,34 @@ export interface SchemaVersionDoc {
 
 export const SCHEMA_VERSION_ID = 'schema';
 
-export interface ItemDoc {
+/**
+ * That the demo dataset is loaded, and who loaded it.
+ *
+ * Exactly one of these ever exists, hence the fixed `_id` — the same reason the
+ * schema version has one. The counts are deliberately not stored here: they are
+ * counted off the `isDemo` flag when asked, so archiving a demo SKU or issuing
+ * against one cannot leave this document quietly lying about what is in there.
+ */
+export interface DemoStateDoc {
+  _id: typeof DEMO_STATE_ID;
+  loadedAt: Date;
+  loadedBy: string;
+}
+
+export const DEMO_STATE_ID = 'demo';
+
+/**
+ * Set on every document the demo dataset created, and on nothing else.
+ *
+ * It is what makes "remove the demo data" a precise operation rather than a
+ * database wipe: an instance that imported its real catalogue on Tuesday and
+ * still has the demo sitting next to it must lose exactly one of the two.
+ */
+export interface DemoMarked {
+  isDemo?: true;
+}
+
+export interface ItemDoc extends DemoMarked {
   _id: ObjectId;
   sku: string;
   name: string;
@@ -96,7 +123,7 @@ export interface ItemDoc {
   updatedAt: Date;
 }
 
-export interface LocationDoc {
+export interface LocationDoc extends DemoMarked {
   _id: ObjectId;
   code: string;
   name: string;
@@ -110,7 +137,7 @@ export interface LocationDoc {
   updatedAt: Date;
 }
 
-export interface SupplierDoc {
+export interface SupplierDoc extends DemoMarked {
   _id: ObjectId;
   code: string;
   name: string;
@@ -130,7 +157,7 @@ export interface SupplierDoc {
  * The join between a supplier and an item, carrying the terms of that one line:
  * their part number for it, and the quantity ladder they price it on.
  */
-export interface SupplierItemDoc {
+export interface SupplierItemDoc extends DemoMarked {
   _id: ObjectId;
   supplierId: ObjectId;
   itemId: ObjectId;
@@ -142,7 +169,7 @@ export interface SupplierItemDoc {
   updatedAt: Date;
 }
 
-export interface MovementDoc {
+export interface MovementDoc extends DemoMarked {
   _id: ObjectId;
   itemId: ObjectId;
   itemSku: string;
@@ -225,6 +252,8 @@ export const stockLevels = (): Collection<StockLevelDoc> =>
   getDb().collection<StockLevelDoc>('stockLevels');
 export const schemaVersion = (): Collection<SchemaVersionDoc> =>
   getDb().collection<SchemaVersionDoc>('schemaVersion');
+export const demoState = (): Collection<DemoStateDoc> =>
+  getDb().collection<DemoStateDoc>('demoState');
 
 /**
  * Idempotent. Run at boot so a fresh database is correct without a migration
@@ -292,6 +321,17 @@ export async function ensureIndexes(): Promise<void> {
     { unique: true, name: 'uniq_item_location' },
   );
   await stockLevels().createIndex({ itemId: 1 }, { name: 'by_item' });
+
+  /*
+   * Sparse, because on an instance that never loaded the demo these index
+   * nothing at all. They exist so that counting the demo dataset and deleting
+   * it are index scans rather than collection scans over a real catalogue.
+   */
+  await items().createIndex({ isDemo: 1 }, { name: 'by_demo', sparse: true });
+  await locations().createIndex({ isDemo: 1 }, { name: 'by_demo', sparse: true });
+  await suppliers().createIndex({ isDemo: 1 }, { name: 'by_demo', sparse: true });
+  await supplierItems().createIndex({ isDemo: 1 }, { name: 'by_demo', sparse: true });
+  await movements().createIndex({ isDemo: 1 }, { name: 'by_demo', sparse: true });
 }
 
 interface LedgerTotal {

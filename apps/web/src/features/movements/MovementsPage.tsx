@@ -14,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useAuth } from '@/features/auth/AuthProvider';
+import { FirstRunHint } from '@/features/onboarding/FirstRunHint';
 import { formatMovementDate } from '@/lib/dates';
 import { cn } from '@/lib/utils';
 import { MoveForm } from './MoveForm';
@@ -192,6 +193,10 @@ export function MovementsPage() {
                     <p className="mt-1 text-sm text-muted-foreground">
                       Receive some stock above and it appears here.
                     </p>
+                    {/* The forms above need an item and a bin to point at, so
+                        on an instance with neither they are not a way out of
+                        this screen. */}
+                    <FirstRunHint className="mt-3" />
                   </TableCell>
                 </TableRow>
               )}

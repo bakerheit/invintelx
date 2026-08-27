@@ -63,6 +63,17 @@ this release is on the only shape the data has ever had.
   administrator without it. `SETUP_TOKEN` pins the token instead of minting
   one, and `FIRST_ADMIN_SETUP=open` turns the gate off for a public sign-up
   deployment. See the README.
+- A first run that ends somewhere useful. Registering an administrator now
+  lands on a welcome screen offering the two paths that exist — import a CSV,
+  or load the demo dataset and look around — and the empty dashboard, item
+  table and movement ledger all point at it rather than each apologising on
+  their own. The demo dataset is the same 40 SKUs and four months of trading
+  that `pnpm db:seed` writes, every row of it flagged, announced by a banner on
+  every screen saying the figures are invented, and removable in one press:
+  `DELETE /api/onboarding/demo` takes out the demo rows and any movement posted
+  against them, and leaves anything you created yourself alone. It is offered
+  only to an instance with nothing in it, so it cannot be mixed into a real
+  catalogue, and loading or removing it is an administrator's action.
 - The API serves the built web app itself, so a production instance is one
   process on one origin. `WEB_DIST` overrides where it looks; pointing it at a
   directory with no `index.html` is a boot failure rather than a warning.

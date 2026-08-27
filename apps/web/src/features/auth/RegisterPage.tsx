@@ -49,7 +49,12 @@ export function RegisterPage() {
     setFormError(null);
     try {
       await registerUser(values);
-      navigate('/items', { replace: true });
+      /*
+       * Not the item table. On the instance this form most often runs on there
+       * is nothing in it, and an empty table is a reason to close the tab. The
+       * welcome screen sends anyone who already has data straight on.
+       */
+      navigate('/welcome', { replace: true });
     } catch (error) {
       // The server sends field-keyed messages for things only it can know,
       // like an email already being taken. Show those on the field itself.

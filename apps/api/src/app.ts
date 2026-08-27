@@ -10,6 +10,7 @@ import { locationsRouter } from './routes/locations.js';
 import { movementsRouter } from './routes/movements.js';
 import { suppliersRouter } from './routes/suppliers.js';
 import { analyticsRouter } from './routes/analytics.js';
+import { onboardingRouter } from './routes/onboarding.js';
 import { webAssets } from './web.js';
 import { VERSION } from './version.js';
 
@@ -95,6 +96,7 @@ export function createApp(): Express {
   app.use('/api/movements', requireAuth, movementsRouter);
   app.use('/api/suppliers', requireAuth, suppliersRouter);
   app.use('/api/analytics', requireAuth, analyticsRouter);
+  app.use('/api/onboarding', requireAuth, onboardingRouter);
 
   // Last chance before the 404: a client-side route that survives a refresh.
   app.use(web.spaFallback);

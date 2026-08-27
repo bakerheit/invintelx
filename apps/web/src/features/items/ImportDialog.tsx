@@ -1,6 +1,12 @@
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
-import { CsvParseError, autoMapColumns, parseCsv, type ItemImportPreview } from '@invintelx/shared';
+import {
+  CsvParseError,
+  autoMapColumns,
+  parseCsv,
+  type ItemImportPreview,
+  type ItemImportResult,
+} from '@invintelx/shared';
 import { ApiError } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -40,6 +46,12 @@ import {
 interface ImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Fired only after a commit the server accepted, so a caller can move the
+   * user on. Cancelling or closing the dialog is not an import and does not
+   * call it.
+   */
+  onImported?: (result: ItemImportResult) => void;
 }
 
 interface LoadedFile {
@@ -69,7 +81,7 @@ const ACTION_VARIANT = {
  * twice. The server still re-parses and re-decides everything before it writes
  * — nothing the browser worked out is trusted.
  */
-export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
+export function ImportDialog({ open, onOpenChange, onImported }: ImportDialogProps) {
   const [step, setStep] = useState<Step>('choose');
   const [file, setFile] = useState<LoadedFile | null>(null);
   const [targets, setTargets] = useState<ColumnTarget[]>([]);
@@ -167,6 +179,7 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
           (result.unchanged > 0 ? `, ${result.unchanged} unchanged` : ''),
       );
       close(false);
+      onImported?.(result);
     } catch (error) {
       showApiProblem(error);
       // Back to the mapping: whatever the server refused, the file has to change.
