@@ -70,6 +70,21 @@ so reading through them is reading a lie.
 duplicated migration fails on the machine that wrote it rather than halfway through a stranger's
 upgrade.
 
+### What runs your migration before anybody else does
+
+`apps/api/src/migrations/upgrade.test.ts` keeps a frozen snapshot of the database as every released
+version left it, and puts each one through the full list — yours included — the moment you append
+it. It then checks that no document went missing, that no movement was altered unless the migration
+declared a `rewrite`, and that every on-hand figure still reconciles against the ledger.
+
+So a migration that loses a row fails on a pull request rather than on somebody's warehouse. What it
+cannot tell you is whether the *change* was the right one; that is what the changelog entry and a
+reviewer are for.
+
+If your migration makes an old fixture fail, the fixture is not the thing to fix. It is a record of
+what somebody's database actually contains, and it is exactly the input your migration exists to
+handle. See [the fixtures README](../apps/api/src/migrations/fixtures/README.md).
+
 ## Migrations that touch the movement ledger
 
 `movements` is append-only and it is the product's truth — every on-hand figure is derived from it,
@@ -96,3 +111,5 @@ Not supported, and the API enforces it: a database at a version higher than the 
 about stops the boot with a message naming both versions. Old code against a new shape writes the
 old shape back into collections that have moved on, which corrupts quietly. Deploy the newer release
 again, or restore the backup taken before the upgrade.
+
+Going the other way — including several versions at once — is [upgrading.md](upgrading.md).

@@ -68,9 +68,50 @@ jobs:
     needs: check
     uses: ./.github/workflows/ci.yml
 
+  # The upgrade path, exercised rather than described. Every released database
+  # shape in apps/api/src/migrations/fixtures is restored, put through this
+  # tag's own migrations, and checked for the two things that decide whether an
+  # upgrade was safe: nothing was lost, and on-hand still reconciles against the
+  # ledger.
+  #
+  # `verify` above already runs this as part of `pnpm test`, so this job is a
+  # second run of the same assertions. It is here because "the upgrade from the
+  # last release is broken" is the one failure that must not arrive as a line
+  # buried in a 400-test log on the day somebody is cutting a release. A named
+  # job that goes red says it in the checks list.
+  upgrade:
+    name: Upgrade from every released version
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache mongodb-memory-server binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}
+
+      # Also fails when a release arrives without a fixture recording the shape
+      # it leaves behind, which is what would quietly end the coverage a release
+      # or two later. See docs/upgrading.md.
+      - name: Upgrade every released shape to ${{ needs.check.outputs.version }}
+        run: pnpm test:upgrade
+
   image:
     name: Publish the image
-    needs: [check, verify]
+    needs: [check, verify, upgrade]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -128,7 +169,7 @@ jobs:
 
   publish:
     name: Publish the release
-    needs: [check, verify, image]
+    needs: [check, verify, upgrade, image]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

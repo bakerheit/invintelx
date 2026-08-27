@@ -17,6 +17,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
+    "test:upgrade": "vitest run apps/api/src/migrations/upgrade.test.ts",
     "release:check": "node scripts/release/check-release.mjs",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",

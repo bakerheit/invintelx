@@ -7,16 +7,22 @@ The hosted instance is [invintelx.org](https://invintelx.org).
 
 **You may run your own.** The AGPL grants you that right and this project has no
 interest in obstructing it. What we do not yet offer is a *supported* self-host
-story — there is no published image, no proven upgrade path and no promise that
-a deployment question gets answered. Running it is allowed and documented;
-operating it is currently your problem. If that changes it will be because
-people actually did it.
+story — there is no published image and no promise that a deployment question
+gets answered. Running it is allowed and documented; operating it is currently
+your problem. If that changes it will be because people actually did it.
 
 Releases are semver tags cut from `main`, and every one of them says what breaks
 and what it will do to your database on first boot: see
 [CHANGELOG.md](CHANGELOG.md), and [docs/releasing.md](docs/releasing.md) for what
 a version number means here. A running instance reports its own version at
 `/api/health`, so a bug report can say which release it is against.
+
+Moving between two of those versions is [docs/upgrading.md](docs/upgrading.md).
+The short version: **you may skip versions within a major and not across one**,
+and that is a claim with a test behind it — every released version's database
+shape is kept and put through the current build's migrations on every release,
+checking that nothing was lost and that on-hand still reconciles against the
+ledger.
 
 > **Status: early.** The first vertical slice works end to end — accounts, sign
 > in, and full CRUD over items. The stock ledger and the analytics that give the
@@ -177,9 +183,12 @@ asks it to. If you would rather it did not, build only the API with
 only.
 
 None of this is a supported deployment yet — see the status note at the top.
-Releases are tagged and there is a changelog to read before you move, but there
-is no published image and no upgrade that has been proven across a version
-boundary. It is how you run it today, honestly described.
+Releases are tagged, there is a changelog to read before you move, and the
+upgrade is exercised against a recorded copy of every released database shape
+rather than merely described ([docs/upgrading.md](docs/upgrading.md)). What is
+still missing is a published image, and a proof that runs the old release's
+*process* rather than restoring its data. It is how you run it today, honestly
+described.
 
 ### Backups
 
