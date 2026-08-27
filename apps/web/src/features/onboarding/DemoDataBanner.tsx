@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { FlaskConical } from 'lucide-react';
 import { toast } from 'sonner';
-import type { DemoDataState } from '@invintelx/shared';
+import type { DemoDataState, DemoRemovalResult } from '@invintelx/shared';
 import { ApiError } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import {
@@ -44,6 +44,7 @@ export function DemoDataBanner() {
       onSuccess: (result) => {
         toast.success(
           `Demo data removed: ${result.items} items and ${result.movements.toLocaleString()} movements.`,
+          { description: retentionSentence(result) },
         );
         // Straight back to the one screen that has something to say about an
         // empty instance, rather than to whichever list just went blank.
@@ -94,8 +95,9 @@ export function DemoDataBanner() {
               {demo.locations} {demo.locations === 1 ? 'location' : 'locations'} and{' '}
               {demo.suppliers} {demo.suppliers === 1 ? 'supplier' : 'suppliers'}, and every
               movement against them — {demo.movements.toLocaleString()} in all. Anything you
-              created yourself stays. It cannot be undone, but the demo can be loaded again from
-              the welcome screen.
+              created yourself stays, including any demo location or supplier your own stock is
+              already using. It cannot be undone, but the demo can be loaded again from the
+              welcome screen.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -106,6 +108,24 @@ export function DemoDataBanner() {
       </AlertDialog>
     </div>
   );
+}
+
+/**
+ * The part of a wipe nobody asked for but everybody needs told: which demo
+ * locations and suppliers were kept because the user's own stock had come to
+ * rest in them. Undefined when nothing was kept, which is the ordinary case —
+ * a toast should not carry a line saying that nothing happened.
+ */
+export function retentionSentence(result: DemoRemovalResult): string | undefined {
+  const kept = [
+    result.retainedLocations > 0 &&
+      `${result.retainedLocations} ${result.retainedLocations === 1 ? 'location' : 'locations'}`,
+    result.retainedSuppliers > 0 &&
+      `${result.retainedSuppliers} ${result.retainedSuppliers === 1 ? 'supplier' : 'suppliers'}`,
+  ].filter((part): part is string => typeof part === 'string');
+
+  if (kept.length === 0) return undefined;
+  return `${kept.join(' and ')} stayed: your own data is using them, so they are yours now.`;
 }
 
 /** What is on screen and where it came from, in one sentence. */

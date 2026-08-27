@@ -7,7 +7,12 @@
  * each apologising on its own.
  */
 import { ObjectId } from 'mongodb';
-import type { DemoDataCounts, DemoDataState, OnboardingState } from '@invintelx/shared';
+import type {
+  DemoDataCounts,
+  DemoDataState,
+  DemoRemovalResult,
+  OnboardingState,
+} from '@invintelx/shared';
 import {
   DEMO_STATE_ID,
   demoState,
@@ -155,8 +160,16 @@ export async function loadDemoData(actor: {
  * are not marked demo. Leaving them would leave a ledger referencing items that
  * no longer exist — so anything that moved a demo item goes with it. The same
  * reasoning covers supply lines pointing at demo items.
+ *
+ * Locations and suppliers run the other way. A new instance has none of its own,
+ * so the only warehouse anybody can receive their first real SKU into is a demo
+ * one, and the only supplier they can price it from is a demo one. Deleting
+ * those would honour the flag and break the promise the confirm dialog makes:
+ * their item would survive with its stock sitting at a location that no longer
+ * exists. So a demo location or supplier that surviving data still points at is
+ * kept and stops being demo — the user has adopted it, and it is theirs now.
  */
-async function clearDemoRows(): Promise<DemoDataCounts> {
+async function clearDemoRows(): Promise<DemoRemovalResult> {
   const demoItemIds = (
     await items().find({ isDemo: true }, { projection: { _id: 1 } }).toArray()
   ).map((doc) => doc._id);
@@ -168,6 +181,30 @@ async function clearDemoRows(): Promise<DemoDataCounts> {
     $or: [{ isDemo: true }, { itemId: { $in: demoItemIds } }],
   });
   const removedItems = await items().deleteMany({ isDemo: true });
+
+  /*
+   * Asked after the deletes above, so what is left in these two collections is
+   * exactly the data that is going to survive this call. Anything it references
+   * is load-bearing by definition; a demo flag on the other end of that
+   * reference is out of date rather than an instruction.
+   */
+  const [stillUsedLocations, stillUsedSuppliers] = await Promise.all([
+    movements().distinct('locationId', {}),
+    supplierItems().distinct('supplierId', {}),
+  ]);
+
+  // Unset before the delete, so the retained rows no longer match it.
+  const [retainedLocations, retainedSuppliers] = await Promise.all([
+    locations().updateMany(
+      { isDemo: true, _id: { $in: stillUsedLocations } },
+      { $unset: { isDemo: '' } },
+    ),
+    suppliers().updateMany(
+      { isDemo: true, _id: { $in: stillUsedSuppliers } },
+      { $unset: { isDemo: '' } },
+    ),
+  ]);
+
   const removedSuppliers = await suppliers().deleteMany({ isDemo: true });
   const removedLocations = await locations().deleteMany({ isDemo: true });
 
@@ -177,11 +214,13 @@ async function clearDemoRows(): Promise<DemoDataCounts> {
     suppliers: removedSuppliers.deletedCount,
     supplierItems: removedSupplyLines.deletedCount,
     movements: removedMovements.deletedCount,
+    retainedLocations: retainedLocations.modifiedCount,
+    retainedSuppliers: retainedSuppliers.modifiedCount,
   };
 }
 
 /** Take the demo back out: its rows, its stock, and the record that it was here. */
-export async function removeDemoData(): Promise<DemoDataCounts> {
+export async function removeDemoData(): Promise<DemoRemovalResult> {
   const removed = await clearDemoRows();
 
   // The projection is downstream of the ledger, so rebuilding it is what makes

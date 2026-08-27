@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   demoDataResultSchema,
+  demoRemovalResultSchema,
   onboardingStateSchema,
   type DemoDataResult,
+  type DemoRemovalResult,
 } from '@invintelx/shared';
 import { apiRequest } from '@/lib/api';
 import { queryKeys } from '@/lib/queryKeys';
@@ -25,18 +27,22 @@ export function useOnboarding() {
  * Loading or wiping the demo rewrites the whole catalogue and the whole ledger,
  * so there is no cached list, detail or dashboard left that is still true.
  */
-function useDemoMutation(method: 'POST' | 'DELETE') {
+export function useLoadDemoData() {
   const queryClient = useQueryClient();
   return useMutation<DemoDataResult, Error, void>({
-    mutationFn: () => apiRequest(demoDataResultSchema, '/onboarding/demo', { method }),
+    mutationFn: () => apiRequest(demoDataResultSchema, '/onboarding/demo', { method: 'POST' }),
     onSuccess: () => queryClient.invalidateQueries(),
   });
 }
 
-export function useLoadDemoData() {
-  return useDemoMutation('POST');
-}
-
+/**
+ * The wipe answers with more than the load does: it also says how many demo
+ * locations and suppliers it kept because real data had come to rest on them.
+ */
 export function useRemoveDemoData() {
-  return useDemoMutation('DELETE');
+  const queryClient = useQueryClient();
+  return useMutation<DemoRemovalResult, Error, void>({
+    mutationFn: () => apiRequest(demoRemovalResultSchema, '/onboarding/demo', { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries(),
+  });
 }

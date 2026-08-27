@@ -301,6 +301,95 @@ describe('DELETE /api/onboarding/demo', () => {
     expect(survivors.map((doc) => doc.sku)).toEqual(['MINE-1']);
   });
 
+  /*
+   * The case the flag alone gets wrong. A new instance has no locations of its
+   * own, so the only bin anybody can receive their first real SKU into belongs
+   * to the demo. Deleting it because it is marked demo would leave that SKU's
+   * stock at a location that no longer exists — real data broken by a wipe that
+   * promised to leave real data alone.
+   */
+  it('keeps a demo location that real stock has come to rest in', async () => {
+    const cookie = await registerAndSignIn(ADMIN);
+    await request(app).post('/api/onboarding/demo').set('Cookie', cookie).expect(201);
+
+    const created = await request(app)
+      .post('/api/items')
+      .set('Cookie', cookie)
+      .send({ sku: 'MINE-1', name: 'My own SKU' })
+      .expect(201);
+    const bin = await db.locations().findOne({ type: 'bin' });
+    expect(bin).not.toBeNull();
+    await request(app)
+      .post('/api/movements/receive')
+      .set('Cookie', cookie)
+      .send({ itemId: created.body.id, locationId: bin!._id.toHexString(), quantity: 12 })
+      .expect(201);
+
+    const removed = await request(app)
+      .delete('/api/onboarding/demo')
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(removed.body.retainedLocations).toBe(1);
+
+    // The location survives, and it is no longer demo: the user has adopted it.
+    const survivor = await db.locations().findOne({ _id: bin!._id });
+    expect(survivor).not.toBeNull();
+    expect(survivor!.isDemo).toBeUndefined();
+
+    // And their stock is still somewhere real.
+    const levels = await db.stockLevels().find({}).toArray();
+    expect(levels).toHaveLength(1);
+    expect(levels[0]!.onHand).toBe(12);
+    expect(levels[0]!.locationId).toEqual(bin!._id);
+    expect(await db.locations().countDocuments({ _id: levels[0]!.locationId })).toBe(1);
+  });
+
+  it('keeps a demo supplier that a real supply line points at', async () => {
+    const cookie = await registerAndSignIn(ADMIN);
+    await request(app).post('/api/onboarding/demo').set('Cookie', cookie).expect(201);
+
+    const created = await request(app)
+      .post('/api/items')
+      .set('Cookie', cookie)
+      .send({ sku: 'MINE-1', name: 'My own SKU' })
+      .expect(201);
+    const supplier = await db.suppliers().findOne({ isDemo: true });
+    expect(supplier).not.toBeNull();
+    await db.supplierItems().insertOne({
+      _id: new ObjectId(),
+      supplierId: supplier!._id,
+      itemId: new ObjectId(created.body.id as string),
+      supplierSku: 'THEIRS-1',
+      priceBreaks: [{ minQuantity: 1, unitPriceCents: 500 }],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const removed = await request(app)
+      .delete('/api/onboarding/demo')
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(removed.body.retainedSuppliers).toBe(1);
+
+    const survivor = await db.suppliers().findOne({ _id: supplier!._id });
+    expect(survivor).not.toBeNull();
+    expect(survivor!.isDemo).toBeUndefined();
+    expect(await db.supplierItems().countDocuments({})).toBe(1);
+  });
+
+  it('keeps nothing back when the demo is all there is', async () => {
+    const cookie = await registerAndSignIn(ADMIN);
+    await request(app).post('/api/onboarding/demo').set('Cookie', cookie).expect(201);
+
+    const removed = await request(app)
+      .delete('/api/onboarding/demo')
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(removed.body).toMatchObject({ retainedLocations: 0, retainedSuppliers: 0 });
+    expect(await db.locations().countDocuments({})).toBe(0);
+    expect(await db.suppliers().countDocuments({})).toBe(0);
+  });
+
   it('404s when there is no demo dataset to remove', async () => {
     const cookie = await registerAndSignIn(ADMIN);
     await request(app).delete('/api/onboarding/demo').set('Cookie', cookie).expect(404);

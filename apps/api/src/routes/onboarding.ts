@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { ObjectId } from 'mongodb';
 import {
   demoDataResultSchema,
+  demoRemovalResultSchema,
   onboardingStateSchema,
   ROLE_RANK,
 } from '@invintelx/shared';
@@ -65,6 +66,6 @@ onboardingRouter.delete(
     if (!(await isDemoLoaded())) {
       throw new NotFoundError('There is no demo dataset loaded on this instance');
     }
-    res.json(demoDataResultSchema.parse(await removeDemoData()));
+    res.json(demoRemovalResultSchema.parse(await removeDemoData()));
   }),
 );

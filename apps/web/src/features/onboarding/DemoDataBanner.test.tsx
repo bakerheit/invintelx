@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import type { DemoDataState, OnboardingState } from '@invintelx/shared';
-import { DemoDataBanner, demoSentence } from './DemoDataBanner';
+import { DemoDataBanner, demoSentence, retentionSentence } from './DemoDataBanner';
 
 /**
  * Demo data that is not obviously demo is worse than no demo data at all —
@@ -47,7 +47,15 @@ function stubApi(onboarding: OnboardingState, calls: Call[] = []) {
     calls.push({ url, method: init?.method ?? 'GET' });
     const body = url.endsWith('/onboarding')
       ? onboarding
-      : { items: 40, locations: 7, suppliers: 5, supplierItems: 100, movements: 1204 };
+      : {
+          items: 40,
+          locations: 7,
+          suppliers: 5,
+          supplierItems: 100,
+          movements: 1204,
+          retainedLocations: 0,
+          retainedSuppliers: 0,
+        };
     return Promise.resolve(
       new Response(JSON.stringify(body), {
         status: 200,
@@ -88,6 +96,32 @@ describe('the demo data sentence', () => {
     expect(sentence).toMatch(/40 made-up SKUs/);
     expect(sentence).toMatch(/1,204 movements/);
     expect(sentence).toMatch(/Ada Operator/);
+  });
+});
+
+describe('the retention sentence', () => {
+  const removal = { items: 40, locations: 7, suppliers: 5, supplierItems: 100, movements: 1204 };
+
+  it('says nothing when the wipe took everything it was pointed at', () => {
+    expect(
+      retentionSentence({ ...removal, retainedLocations: 0, retainedSuppliers: 0 }),
+    ).toBeUndefined();
+  });
+
+  it('names what stayed, and why it is theirs now', () => {
+    const sentence = retentionSentence({
+      ...removal,
+      retainedLocations: 1,
+      retainedSuppliers: 0,
+    });
+    expect(sentence).toMatch(/1 location stayed/);
+    expect(sentence).toMatch(/your own data is using them/i);
+  });
+
+  it('joins both kinds when both stayed, and counts them in the plural', () => {
+    expect(
+      retentionSentence({ ...removal, retainedLocations: 2, retainedSuppliers: 3 }),
+    ).toMatch(/2 locations and 3 suppliers stayed/);
   });
 });
 

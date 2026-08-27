@@ -71,7 +71,9 @@ this release is on the only shape the data has ever had.
   that `pnpm db:seed` writes, every row of it flagged, announced by a banner on
   every screen saying the figures are invented, and removable in one press:
   `DELETE /api/onboarding/demo` takes out the demo rows and any movement posted
-  against them, and leaves anything you created yourself alone. It is offered
+  against them, and leaves anything you created yourself alone — including any
+  demo location or supplier your own stock has come to rest in, which is kept
+  and stops being demo rather than being deleted out from under it. It is offered
   only to an instance with nothing in it, so it cannot be mixed into a real
   catalogue, and loading or removing it is an administrator's action.
 - The API serves the built web app itself, so a production instance is one

@@ -56,3 +56,19 @@ export type OnboardingState = z.infer<typeof onboardingStateSchema>;
 /** What a load or a wipe actually did, so the toast can be specific. */
 export const demoDataResultSchema = demoDataCountsSchema;
 export type DemoDataResult = z.infer<typeof demoDataResultSchema>;
+
+/**
+ * A wipe, which is not quite the mirror image of a load.
+ *
+ * Somebody looking around the demo has only demo locations to receive their own
+ * first SKU into, and only demo suppliers to buy it from. Deleting those would
+ * leave their stock sitting at a warehouse that no longer exists — so a demo
+ * location or supplier that real data has come to depend on is kept and stops
+ * being demo, rather than being removed. These count how often that happened,
+ * so the result can say so instead of quietly under-deleting.
+ */
+export const demoRemovalResultSchema = demoDataResultSchema.extend({
+  retainedLocations: z.number().int(),
+  retainedSuppliers: z.number().int(),
+});
+export type DemoRemovalResult = z.infer<typeof demoRemovalResultSchema>;

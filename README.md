@@ -132,6 +132,13 @@ saying the figures on it are invented, with a **Remove demo data** button that
 takes out the demo rows and every movement posted against them — and leaves
 anything you created yourself alone.
 
+Locations and suppliers are the exception to that flag, deliberately. A new
+instance has none of its own, so the only warehouse anybody can receive their
+first real SKU into is a demo one. Removing the demo keeps any location or
+supplier that surviving data still points at, and stops calling it demo — the
+alternative is real stock left sitting at a warehouse that no longer exists. The
+wipe says how many it kept.
+
 The same thing is reachable over the API: `GET /api/onboarding` reports what the
 instance holds, `POST /api/onboarding/demo` loads the dataset and
 `DELETE /api/onboarding/demo` removes it.
