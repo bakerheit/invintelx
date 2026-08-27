@@ -13,6 +13,7 @@ import { formatCents, type DeadStockRow, type ReorderSuggestion } from '@invinte
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FirstRunHint } from '@/features/onboarding/FirstRunHint';
 import { cn } from '@/lib/utils';
 import { MovementSparkline } from './MovementSparkline';
 import { useDashboard } from './api';
@@ -81,14 +82,22 @@ export function DashboardPage() {
       {data && nothingToDo && (
         <div className="rounded-lg border border-border bg-card p-12 text-center">
           <PackageSearch className="mx-auto h-8 w-8 text-muted-foreground" />
-          <p className="mt-3 font-medium">Nothing needs a decision today</p>
+          <p className="mt-3 font-medium">
+            {data.itemsConsidered === 0
+              ? 'There is nothing to act on because there is nothing here'
+              : 'Nothing needs a decision today'}
+          </p>
           <p className="mt-1 text-sm text-muted-foreground">
             {data.itemsConsidered === 0
-              ? 'There are no active items yet.'
+              ? 'This screen ranks stock by how much it is costing you. It needs some stock first.'
               : `Checked ${data.itemsConsidered} active ${
                   data.itemsConsidered === 1 ? 'SKU' : 'SKUs'
                 }. None is out, low, or sitting idle.`}
           </p>
+          {/* Renders only on an instance with nothing in it at all, which is
+              the one case where this screen has no way to become useful on its
+              own terms. */}
+          <FirstRunHint className="mt-4" />
         </div>
       )}
 

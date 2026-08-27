@@ -6,6 +6,7 @@ import { useTheme } from './ThemeProvider';
 import { APP_ICON, NAV_ITEMS } from './nav';
 import { CommandPalette } from './CommandPalette';
 import { SourceNotice } from './SourceNotice';
+import { DemoDataBanner } from '@/features/onboarding/DemoDataBanner';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -182,6 +183,10 @@ export function AppShell() {
             </DropdownMenu>
           </div>
         </header>
+
+        {/* Above the content and outside it, so no screen can forget to say
+            that everything on it was made up. */}
+        <DemoDataBanner />
 
         <main className="p-4 sm:p-6">
           <Outlet />

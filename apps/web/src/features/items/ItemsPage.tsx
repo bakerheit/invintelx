@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FirstRunHint } from '@/features/onboarding/FirstRunHint';
 import { itemsExportHref, useArchiveItem, useItems, useRestoreItem } from './api';
 import { buildItemColumns } from './columns';
 import { ItemDialog } from './ItemDialog';
@@ -141,14 +142,20 @@ export function ItemsPage() {
         }
         emptyAction={
           !params.q ? (
-            <Button
-              onClick={() => {
-                setEditing(undefined);
-                setDialogOpen(true);
-              }}
-            >
-              <Plus /> New item
-            </Button>
+            <div className="space-y-3">
+              <Button
+                onClick={() => {
+                  setEditing(undefined);
+                  setDialogOpen(true);
+                }}
+              >
+                <Plus /> New item
+              </Button>
+              {/* One SKU typed by hand is not a first five minutes. On an
+                  instance with nothing in it, say where the other two paths
+                  are. */}
+              <FirstRunHint />
+            </div>
           ) : undefined
         }
       />

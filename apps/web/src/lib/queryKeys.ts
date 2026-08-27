@@ -10,6 +10,8 @@
 export const queryKeys = {
   session: ['session'] as const,
   setupStatus: ['auth', 'setup'] as const,
+  /** What this instance holds, and whether the demo dataset is part of it. */
+  onboarding: ['onboarding'] as const,
   dashboard: (query: Record<string, unknown>) => ['dashboard', query] as const,
   items: {
     /**

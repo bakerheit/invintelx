@@ -114,6 +114,28 @@ log; `FIRST_ADMIN_SETUP=open` turns the gate off entirely and hands the instance
 to the first registration, which is what a public sign-up product like
 invintelx.org wants and nothing else should.
 
+### The first five minutes
+
+A fresh instance has no items, no locations and no movements, so the dashboard,
+the item table and the movement ledger are all empty at once. Registering the
+administrator lands on `/welcome`, which offers the only two paths that exist:
+
+- **Import a CSV.** Columns are mapped by hand where the names do not match,
+  and nothing is written until you have seen what the file would do.
+- **Load the demo dataset.** The same 40 SKUs and four months of trading that
+  `pnpm db:seed` writes — enough that the dashboard has something to rank.
+
+The demo dataset is offered only to an instance with nothing in it, so it can
+never be mixed into a real catalogue, and loading or removing it is an
+administrator's action. While it is loaded a banner sits above every screen
+saying the figures on it are invented, with a **Remove demo data** button that
+takes out the demo rows and every movement posted against them — and leaves
+anything you created yourself alone.
+
+The same thing is reachable over the API: `GET /api/onboarding` reports what the
+instance holds, `POST /api/onboarding/demo` loads the dataset and
+`DELETE /api/onboarding/demo` removes it.
+
 ## Running it outside a dev checkout
 
 Vite is a development server and is not the answer in production. Instead the

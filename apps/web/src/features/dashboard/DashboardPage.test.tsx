@@ -73,24 +73,50 @@ function snapshot(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function stubDashboard(body: unknown, status = 200) {
-  vi.stubGlobal('fetch', () =>
+/**
+ * The empty state asks the instance whether it is a first run, so the stub has
+ * to answer that too — `onboarding` says whether there is anything in here at
+ * all, which is a different question from whether any list has rows.
+ */
+function stubDashboard(body: unknown, status = 200, onboarding = onboardingState()) {
+  vi.stubGlobal('fetch', (input: string) =>
     Promise.resolve(
-      new Response(JSON.stringify(body), {
-        status,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+      String(input).endsWith('/onboarding')
+        ? new Response(JSON.stringify(onboarding), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        : new Response(JSON.stringify(body), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+          }),
     ),
   );
+}
+
+function onboardingState(overrides: Record<string, unknown> = {}) {
+  return {
+    items: 42,
+    locations: 7,
+    movements: 900,
+    empty: false,
+    demo: null,
+    canManageDemo: true,
+    ...overrides,
+  };
 }
 
 function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const router = createMemoryRouter([{ path: '/dashboard', element: <DashboardPage /> }], {
-    initialEntries: ['/dashboard'],
-  });
+  const router = createMemoryRouter(
+    [
+      { path: '/dashboard', element: <DashboardPage /> },
+      { path: '/welcome', element: <p>the welcome screen</p> },
+    ],
+    { initialEntries: ['/dashboard'] },
+  );
   return render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
@@ -116,6 +142,27 @@ describe('DashboardPage', () => {
     expect(await screen.findByText(/nothing needs a decision today/i)).toBeInTheDocument();
     // "42 SKUs checked" is what stops an empty screen reading as a broken one.
     expect(screen.getByText(/checked 42 active skus/i)).toBeInTheDocument();
+    // ...and a screen that checked forty-two SKUs is not a first run.
+    expect(screen.queryByRole('link', { name: /demo data/i })).not.toBeInTheDocument();
+  });
+
+  /*
+   * A brand new instance and a quiet week both produce a dashboard with no rows
+   * on it, and they want opposite things said. The first has nowhere to go from
+   * here on its own terms, so it gets the one pointer the empty screens share.
+   */
+  it('sends a brand new instance somewhere it can actually start', async () => {
+    stubDashboard(
+      snapshot({ itemsConsidered: 0, inventoryValueCents: 0 }),
+      200,
+      onboardingState({ items: 0, locations: 0, movements: 0, empty: true }),
+    );
+    renderPage();
+
+    expect(await screen.findByText(/because there is nothing here/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('link', { name: /import a csv or load the demo data/i }),
+    ).toBeInTheDocument();
   });
 
   it('does not render a section that has nothing in it', async () => {
