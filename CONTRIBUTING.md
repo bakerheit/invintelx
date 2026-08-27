@@ -25,6 +25,26 @@ New list screens should copy the shape of the items screen rather than inventing
 their own table. The URL-backed table state and the shared `DataTable` exist so
 that filtering, sorting and paging behave the same way everywhere.
 
+## The bundle has a size budget
+
+`pnpm build` measures what the web app makes a first-time visitor download —
+the entry chunk, everything it imports synchronously, and the stylesheet — and
+fails if it is over the ceiling in `apps/web/vite.config.ts`. There is a second
+ceiling on the build as a whole, which catches weight that only ever lands in a
+lazily loaded screen.
+
+If a change breaches it, there are two honest answers and no third one:
+
+- Put the new weight behind a dynamic import. Screens are already loaded this
+  way — add the route to `apps/web/src/routes/router.tsx` the same way the
+  others are, and its chunk stays off the first paint.
+- Raise the number, and say in the pull request what it buys. The budget is
+  meant to make growth a decision rather than a drift.
+
+A new screen costs nothing until somebody navigates to it, so the budget should
+not move for one. A new dependency in the *entry* path is the case worth
+arguing about.
+
 ## Tests
 
 API tests run against a real `mongod`, not a mock. If a behaviour depends on a

@@ -76,6 +76,12 @@ this release is on the only shape the data has ever had.
 - The API serves the built web app itself, so a production instance is one
   process on one origin. `WEB_DIST` overrides where it looks; pointing it at a
   directory with no `index.html` is a boot failure rather than a warning.
+- The web app is split by route, so a signed-out visitor downloads the login
+  screen rather than the whole product. First paint went from 231 kB to 150 kB
+  gzipped, which is the number that decides how long a warehouse tablet on bad
+  wifi stares at a blank page. Screens, and the vendor code only they use,
+  arrive when they are navigated to. The build now enforces a size budget and
+  fails if the bundle outgrows it.
 - `/api/health` reports the running version, so a bug report can say which
   release it is against.
 - A documented backup and restore procedure, and a command that checks a restore
