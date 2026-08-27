@@ -75,3 +75,14 @@ what gets exercised daily. Self-hosting is permitted and we will take patches
 that make it easier — but it is not yet *supported*: there is no published
 image, no proven upgrade path, and deployment questions may go unanswered. Say
 which one you are working on when you open an issue, so expectations match.
+
+[docs/support-policy.md](docs/support-policy.md) draws the line properly: which
+versions get fixes, what counts as a product bug, and what belongs to whoever is
+operating the instance.
+
+## Security
+
+Never open a public issue for a security problem, and never send a fix for one
+as an ordinary pull request — a patch is a disclosure, and the commit message
+usually explains the attack. [SECURITY.md](SECURITY.md) has the private route;
+start there and a maintainer will tell you where the fix should go.

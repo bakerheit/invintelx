@@ -205,6 +205,19 @@ walkthrough that ends at the check above. It is written and checked but not yet
 proven: nobody has run it end to end against a real deployment, and the page says
 so at the top until somebody has.
 
+## Security and support
+
+Found a hole? **Do not open a public issue.** [SECURITY.md](SECURITY.md) has the
+private disclosure route, what to put in a report, what happens after you send
+it, and the list of things that are documented behaviour rather than
+vulnerabilities.
+
+[docs/support-policy.md](docs/support-policy.md) is the other half: which
+versions get fixes and for how long, what counts as a product bug, and what is
+your deployment's problem rather than the application's. Worth reading before
+you file anything — it is short, and it is what keeps the answerable questions
+answerable.
+
 ## Checks
 
 ```bash
