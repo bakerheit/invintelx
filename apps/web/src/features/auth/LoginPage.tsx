@@ -41,7 +41,6 @@ export function LoginPage() {
           label="Email"
           type="email"
           autoComplete="email"
-          autoFocus
           error={errors.email?.message}
           {...register('email')}
         />

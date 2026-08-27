@@ -118,6 +118,11 @@ export function ReverseDialog({ movement, open, onOpenChange }: ReverseDialogPro
           <form onSubmit={onSubmit} className="grid gap-4" noValidate>
             <FormField
               label="Note"
+              // Focus moves into the dialog on open, per the ARIA dialog
+              // pattern - not a page grabbing focus on load, which is what
+              // no-autofocus exists to stop. The note is the only thing being
+              // asked for here.
+              // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
               placeholder="Counted twice"
               hint="Why it was wrong. This is what the next person reads."
