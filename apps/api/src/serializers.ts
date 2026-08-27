@@ -1,5 +1,21 @@
-import type { Item, Location, Movement, PublicUser, StockLevel } from '@invintelx/shared';
-import type { ItemDoc, LocationDoc, MovementDoc, StockLevelDoc, UserDoc } from './db.js';
+import type {
+  Item,
+  Location,
+  Movement,
+  PublicUser,
+  StockLevel,
+  Supplier,
+  SupplierItem,
+} from '@invintelx/shared';
+import type {
+  ItemDoc,
+  LocationDoc,
+  MovementDoc,
+  StockLevelDoc,
+  SupplierDoc,
+  SupplierItemDoc,
+  UserDoc,
+} from './db.js';
 
 /**
  * Documents never go to the client directly. Going through an explicit mapper
@@ -46,6 +62,45 @@ export function toLocation(doc: LocationDoc): Location {
     path: doc.path.map((id) => id.toHexString()),
     pathLabel: doc.pathLabel,
     isActive: doc.isActive,
+    createdAt: doc.createdAt.toISOString(),
+    updatedAt: doc.updatedAt.toISOString(),
+  };
+}
+
+export function toSupplier(doc: SupplierDoc): Supplier {
+  return {
+    id: doc._id.toHexString(),
+    code: doc.code,
+    name: doc.name,
+    status: doc.status,
+    contact: {
+      name: doc.contact.name,
+      email: doc.contact.email,
+      phone: doc.contact.phone,
+      website: doc.contact.website,
+      address: doc.contact.address,
+    },
+    paymentTerms: doc.paymentTerms,
+    currency: doc.currency,
+    promisedLeadTimeDays: doc.promisedLeadTimeDays,
+    notes: doc.notes,
+    createdAt: doc.createdAt.toISOString(),
+    updatedAt: doc.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * The item is passed in rather than looked up here, so that listing a hundred
+ * lines is one query for the items and not a hundred.
+ */
+export function toSupplierItem(doc: SupplierItemDoc, item: ItemDoc | null): SupplierItem {
+  return {
+    id: doc._id.toHexString(),
+    supplierId: doc.supplierId.toHexString(),
+    itemId: doc.itemId.toHexString(),
+    supplierSku: doc.supplierSku,
+    priceBreaks: doc.priceBreaks.map((brk) => ({ ...brk })),
+    item: item ? toItem(item) : null,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
   };

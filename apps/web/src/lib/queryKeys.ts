@@ -10,6 +10,7 @@
 export const queryKeys = {
   session: ['session'] as const,
   setupStatus: ['auth', 'setup'] as const,
+  dashboard: (query: Record<string, unknown>) => ['dashboard', query] as const,
   items: {
     /**
      * Prefix for everything hanging off an item, stock and history included.

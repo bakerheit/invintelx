@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router';
 import { useAuth } from './AuthProvider';
+import { safeRedirect } from './redirect';
 
 export function ProtectedRoute() {
   const { user, isLoading } = useAuth();
@@ -39,9 +40,12 @@ export function PublicOnlyRoute() {
      * redirect wins the race against the login page's own navigate() call.
      * Hardcoding /items here therefore silently discarded the destination a
      * bounced user was originally trying to reach, filters and all.
+     *
+     * Router state is untyped and comes from whatever rendered the previous
+     * screen, so the destination is validated rather than trusted.
      */
     const from = (location.state as { from?: string } | null)?.from;
-    return <Navigate to={from ?? '/items'} replace />;
+    return <Navigate to={safeRedirect(from)} replace />;
   }
 
   return <Outlet />;
