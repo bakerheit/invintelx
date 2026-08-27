@@ -134,13 +134,25 @@ Everyone after them is a member and needs no token. The token is shown once per
 boot, replaced by the next boot, and dead as soon as it has made an
 administrator — so restart the API if you lose it.
 
-Two knobs, both documented in `.env.example`: `SETUP_TOKEN` pins the token
+Two knobs, both in `.env.example` and in
+[docs/configuration.md](docs/configuration.md): `SETUP_TOKEN` pins the token
 instead of minting one, for deploys where injecting a secret beats reading a
 log; `FIRST_ADMIN_SETUP=open` turns the gate off entirely and hands the instance
 to the first registration, which is what a public sign-up product like
 invintelx.org wants and nothing else should.
 
 ## Running it outside a dev checkout
+
+What follows is the short version, and it is the part that is about *this*
+application. [docs/deployment.md](docs/deployment.md) is the whole of it: TLS,
+what a reverse proxy has to tell the API about the client in front of it, the
+cookie rules sign-in depends on, and the endpoint to point a health probe at.
+Every environment variable — and what a wrong value looks like from the outside
+— is [docs/configuration.md](docs/configuration.md), generated from the same Zod
+schema the API boots against rather than written out by hand and left to rot.
+
+Neither page makes your instance a supported one. They exist so that running an
+unsupported instance is still something you can do properly.
 
 Vite is a development server and is not the answer in production. Instead the
 API serves the built web app itself:
