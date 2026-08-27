@@ -161,6 +161,55 @@ describe('GET /api/items/lookup', () => {
     expect(response.body.sku).toBe('NEW-1');
   });
 
+  /*
+   * The case "prefer the active one" does not decide. Two live items sharing a
+   * supplier code is the same duplicate-barcode situation, and which of them
+   * comes back is arbitrary — but it has to be the *same* arbitrary answer, or
+   * scanning one label twice books stock against two different items. Inserted
+   * in descending SKU order so natural order and sorted order disagree.
+   */
+  it('gives the same answer every time when two active items share a barcode', async () => {
+    const cookie = await signIn();
+    await createItem(cookie, { sku: 'ZZZ-9', name: 'Second', barcode: '5077777777777' });
+    await createItem(cookie, { sku: 'AAA-1', name: 'First', barcode: '5077777777777' });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await request(app)
+        .get('/api/items/lookup?code=5077777777777')
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(response.body.sku).toBe('AAA-1');
+    }
+  });
+
+  /*
+   * And the last branch of the chain, which is a bare docs[0]: with nothing
+   * active to prefer, the sort is the only thing making it repeatable.
+   */
+  it('gives the same answer every time when both candidates are archived', async () => {
+    const cookie = await signIn();
+    const second = await createItem(cookie, {
+      sku: 'ZZZ-8',
+      name: 'Second',
+      barcode: '5088888888888',
+    });
+    const first = await createItem(cookie, {
+      sku: 'AAA-2',
+      name: 'First',
+      barcode: '5088888888888',
+    });
+    await request(app).post(`/api/items/${second.id}/archive`).set('Cookie', cookie).expect(200);
+    await request(app).post(`/api/items/${first.id}/archive`).set('Cookie', cookie).expect(200);
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await request(app)
+        .get('/api/items/lookup?code=5088888888888')
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(response.body.sku).toBe('AAA-2');
+    }
+  });
+
   it('needs a session', async () => {
     await request(app).get('/api/items/lookup?code=BOLT-M6-30').expect(401);
   });

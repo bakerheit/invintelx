@@ -83,10 +83,52 @@ function renderForm() {
  * Dispatched synchronously, so the real gaps between these events are well
  * under a millisecond — which is exactly what makes it a scanner and not a
  * person. Nothing about the clock is mocked.
+ *
+ * The Shift keydowns are the point of the fidelity. A wedge sends uppercase by
+ * setting the HID modifier bit, and the OS turns that transition into a keydown
+ * of its own that lands in the middle of the code — so every SKU scanned here
+ * puts a modifier through the buffer, which is what nothing in the suite used
+ * to do. Releasing Shift is a keyup and never reaches a keydown listener, so
+ * only the presses are dispatched.
  */
 function scan(code: string, target: Element = document.body) {
-  for (const char of code) fireEvent.keyDown(target, { key: char });
+  let shifted = false;
+  for (const char of code) {
+    const needsShift = /[A-Z]/.test(char);
+    if (needsShift && !shifted) fireEvent.keyDown(target, { key: 'Shift', shiftKey: true });
+    shifted = needsShift;
+    fireEvent.keyDown(target, { key: char, shiftKey: needsShift });
+  }
   fireEvent.keyDown(target, { key: 'Enter' });
+}
+
+/**
+ * Hold the thread for `ms`, without yielding.
+ *
+ * Two things need this and neither can fake it with timers. A person putting a
+ * pen down before reaching for the gun leaves a gap of hundreds of milliseconds;
+ * in a test their keystrokes and the scan are microseconds apart, which is one
+ * unbroken run and glues the digits they typed onto the front of the code. And
+ * jank is by definition the thread not being yielded.
+ */
+function holdTheThread(ms: number) {
+  const until = performance.now() + ms;
+  while (performance.now() < until) {
+    /* deliberately busy */
+  }
+}
+
+/**
+ * One keydown carrying the timestamp the UA would have stamped on it.
+ *
+ * `fireEvent`'s own events are stamped when they are constructed, which is
+ * faithful but not controllable. These tests need to drive the event clock and
+ * the wall clock apart, because telling them apart is the whole assertion.
+ */
+function keyAt(key: string, at: number, target: Element = document.body) {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'timeStamp', { value: at });
+  fireEvent(target, event);
 }
 
 beforeEach(() => stubApi());
@@ -104,11 +146,53 @@ describe('scanning into a movement form', () => {
     await waitFor(() => expect(screen.getByLabelText('Quantity')).toHaveFocus());
   });
 
-  it('resolves a SKU the same way as a barcode', async () => {
+  /*
+   * Reaching the lookup at all means the Shift keydowns between BOLT and M6-30
+   * did not abandon the run. A buffer that treats a modifier as somebody
+   * reaching for a key asks the server about M6-30 instead.
+   */
+  it('resolves a SKU the same way as a barcode, modifier keydowns and all', async () => {
     stubApi({ 'BOLT-M6-30': ITEM });
     renderForm();
 
     scan('BOLT-M6-30');
+
+    expect(await screen.findByText('Hex bolt M6 x 30mm')).toBeInTheDocument();
+  });
+
+  /*
+   * A code ending in uppercase is the failure that makes no noise: the tail
+   * after the last modifier is too short to be a scan, so nothing happens and
+   * nobody is told. Silence here is the pallet the ticket is about.
+   */
+  it('resolves a SKU that ends in uppercase, where a dropped modifier means silence', async () => {
+    stubApi({ 'ABC-123-XY': { ...ITEM, sku: 'ABC-123-XY' } });
+    renderForm();
+
+    scan('ABC-123-XY');
+
+    expect(await screen.findByText('Hex bolt M6 x 30mm')).toBeInTheDocument();
+    expect(screen.getByText('ABC-123-XY')).toBeInTheDocument();
+  });
+
+  /*
+   * The gap that decides this is 35ms, which one ordinary React render can
+   * swallow. Here the UA stamped the keystrokes at scanner speed and the page
+   * then took 60ms to get round to the last one — a clock read inside the
+   * listener calls that a person and abandons the code halfway through.
+   */
+  it('reads a scan through a render longer than the gap it is judged by', async () => {
+    renderForm();
+
+    let at = 1_000;
+    for (const char of BARCODE) {
+      keyAt(char, at);
+      at += 8;
+    }
+
+    // The way a re-render of the movements page holds it.
+    holdTheThread(60);
+    keyAt('Enter', at);
 
     expect(await screen.findByText('Hex bolt M6 x 30mm')).toBeInTheDocument();
   });
@@ -155,6 +239,56 @@ describe('scanning into a movement form', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/GONE-1 is archived/);
     expect(screen.queryByRole('button', { name: /create this item/i })).not.toBeInTheDocument();
+  });
+
+  /*
+   * A scan voids the quantity whatever it resolves to, and the failing paths are
+   * the ones that need it. The cursor is already in this box — the previous scan
+   * put it there — so the first characters of the next code land in it, and the
+   * count somebody typed against the last SKU is sitting under them. Clear only
+   * on success and an unknown code leaves both behind with the cursor after
+   * them, which posts a number nobody entered.
+   */
+  it('empties the quantity box on a scan that resolves to nothing', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    scan(BARCODE);
+    const quantity = await screen.findByLabelText('Quantity');
+    await waitFor(() => expect(quantity).toHaveFocus());
+    await user.type(quantity, '12');
+    expect(quantity).toHaveValue(12);
+
+    holdTheThread(50);
+    scan('9999999999999', quantity);
+
+    // Named exactly, so the assertion cannot be satisfied by the typed digits
+    // riding along on the front of the code.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Nothing in the catalogue has the SKU or barcode 9999999999999.',
+    );
+    expect(quantity).toHaveValue(null);
+  });
+
+  /*
+   * Same guarantee on the other failing branch: an archived hit never reaches
+   * the form's onItem either.
+   */
+  it('empties the quantity box on a scan that lands on an archived item', async () => {
+    const user = userEvent.setup();
+    stubApi({ [BARCODE]: ITEM, 'GONE-1': { ...ITEM, sku: 'GONE-1', status: 'archived' } });
+    renderForm();
+
+    scan(BARCODE);
+    const quantity = await screen.findByLabelText('Quantity');
+    await waitFor(() => expect(quantity).toHaveFocus());
+    await user.type(quantity, '12');
+
+    holdTheThread(50);
+    scan('GONE-1', quantity);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/GONE-1 is archived/);
+    expect(quantity).toHaveValue(null);
   });
 
   it('ignores a code typed into the reference field, which is somebody writing', async () => {

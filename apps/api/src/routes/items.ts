@@ -161,17 +161,28 @@ itemsRouter.get(
     // that reports lower case is otherwise an unrecognised code.
     const sku = code.toUpperCase();
 
+    /*
+     * Sorted, because the choice below ends in `docs[0]` and an unsorted find
+     * makes that "whatever Mongo returned first" — which is the thing the
+     * ordering exists to avoid. It also decides the candidates: without a sort
+     * the `limit` keeps an arbitrary ten, so an active item could be left out
+     * of a set of eleven and lose to an archived one.
+     *
+     * `status` first and ascending is not incidental: 'active' sorts before
+     * 'archived', so the live items are the ones the limit is guaranteed to
+     * keep. `sku` breaks the remaining tie between two active items sharing a
+     * supplier barcode — arbitrary either way, but the same arbitrary answer
+     * every time, which is what an operator scanning the same label twice
+     * needs. A unique index on barcode is the real fix and a data decision
+     * nobody has taken yet; see the finding on INVX-62.
+     */
     const docs = await items()
       .find({ $or: [{ sku }, { barcode: code }] })
+      .sort({ status: 1, sku: 1 })
       .limit(MAX_LOOKUP_CANDIDATES)
       .toArray();
 
-    /*
-     * Active beats archived, and a SKU hit beats a barcode hit. Barcodes carry
-     * no unique index — a supplier code reused across two items is a real
-     * thing — so this has to be an order somebody can predict rather than
-     * whatever Mongo returned first.
-     */
+    // Active beats archived, and a SKU hit beats a barcode hit.
     const match =
       docs.find((doc) => doc.status === 'active' && doc.sku === sku) ??
       docs.find((doc) => doc.status === 'active') ??

@@ -76,10 +76,11 @@ export function TransferForm() {
     setValue('toLocationId', next?.id ?? '', { shouldValidate: Boolean(next) });
   };
 
-  /** See the note in MoveForm: a scan chooses the item and hands over the number. */
+  /** See the notes in MoveForm: cleared on every attempt, not only the ones that resolve. */
+  const scanStarted = () => setValue('quantity', '');
+
   const scanned = (next: Item) => {
     chooseItem(next);
-    setValue('quantity', '');
     setFocus('quantity');
   };
 
@@ -117,7 +118,7 @@ export function TransferForm() {
   return (
     <FormCard title="Transfer" description="Move stock from one bin to another. Total on hand does not change.">
       <form onSubmit={onSubmit} className="grid gap-4" noValidate>
-        <ItemScanner onItem={scanned} />
+        <ItemScanner onItem={scanned} onScanStart={scanStarted} />
 
         <ItemPicker value={item} onChange={chooseItem} error={errors.itemId?.message} />
 

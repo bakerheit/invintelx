@@ -84,10 +84,11 @@ export function AdjustForm() {
     setValue('locationId', next?.id ?? '', { shouldValidate: Boolean(next) });
   };
 
-  /** See the note in MoveForm: a scan chooses the item and hands over the number. */
+  /** See the notes in MoveForm: cleared on every attempt, not only the ones that resolve. */
+  const scanStarted = () => setValue('quantity', '');
+
   const scanned = (next: Item) => {
     chooseItem(next);
-    setValue('quantity', '');
     setFocus('quantity');
   };
 
@@ -128,7 +129,7 @@ export function AdjustForm() {
       description="Correct what the shelf says against what the ledger says, with a reason that can be totalled later."
     >
       <form onSubmit={onSubmit} className="grid gap-4" noValidate>
-        <ItemScanner onItem={scanned} />
+        <ItemScanner onItem={scanned} onScanStart={scanStarted} />
 
         <div className="grid gap-4 sm:grid-cols-2">
           <ItemPicker value={item} onChange={chooseItem} error={errors.itemId?.message} />

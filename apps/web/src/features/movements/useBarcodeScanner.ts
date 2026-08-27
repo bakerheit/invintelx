@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { EMPTY_SCAN_BUFFER, stepScanBuffer, type ScanBuffer } from './scanning';
+import { EMPTY_SCAN_BUFFER, isModifierKey, stepScanBuffer, type ScanBuffer } from './scanning';
 
 /**
  * Where a scan is allowed to interrupt.
@@ -47,6 +47,15 @@ export function useBarcodeScanner(onScan: (code: string) => void, enabled = true
     }
 
     const handle = (event: KeyboardEvent) => {
+      /*
+       * A modifier pressed on its own is skipped before anything else looks at
+       * it. It is how uppercase arrives from a wedge scanner, so none of the
+       * rules below may fire on it: the chord test would see `altKey` on an
+       * AltGraph keydown, and the buffer would be abandoned mid-code. Left
+       * entirely alone, the run continues into the character it is modifying.
+       */
+      if (isModifierKey(event.key)) return;
+
       // Auto-repeat arrives at scanner speed, and a chord is somebody reaching
       // for a shortcut. Neither is a label going under the gun.
       if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) {
@@ -58,7 +67,18 @@ export function useBarcodeScanner(onScan: (code: string) => void, enabled = true
         return;
       }
 
-      const step = stepScanBuffer(buffer.current, event.key, performance.now());
+      /*
+       * The event's own timestamp, not the clock read here. Both sit on the
+       * same time origin, but `performance.now()` in a listener says when the
+       * handler got the thread — and the gap that decides this is 35ms, which
+       * an ordinary React render can swallow whole. The item search is armed as
+       * a scan target on purpose, and each unsuppressed character there costs a
+       * render; on a warehouse tablet three of those are enough to make a
+       * scanner look like a person and abandon the code halfway through.
+       * `event.timeStamp` is stamped by the UA when the keystroke happened and
+       * does not care what the page was busy with afterwards.
+       */
+      const step = stepScanBuffer(buffer.current, event.key, event.timeStamp);
       buffer.current = step.buffer;
 
       if (step.scanned !== null) {

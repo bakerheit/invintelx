@@ -60,13 +60,62 @@ export interface ScanStep {
 }
 
 /**
+ * Keys that are a modifier and nothing else.
+ *
+ * These are part of a code, not somebody reaching for a key. A keyboard-wedge
+ * scanner sending an uppercase letter sets the HID modifier bit, and the OS
+ * turns that transition into a keydown of its own with `key === 'Shift'` before
+ * the letter arrives. So `BOLT-M6-30` off a real gun is
+ *
+ *     Shift B O L T Shift(up) - Shift M 6 - 3 0 Enter
+ *
+ * and a buffer that abandons the run on Shift reads `M6-30`, which resolves to
+ * nothing and offers to create an item that is already in the catalogue. Worse,
+ * a code ending in an uppercase run leaves a tail below `MIN_CODE_LENGTH` and
+ * the scan does nothing at all — the silence the ticket exists to prevent.
+ * Scanners configured in CapsLock mode take the same path through `CapsLock`.
+ *
+ * Pure-numeric GTINs carry no modifier, which is why this was invisible.
+ */
+const MODIFIER_KEYS = new Set([
+  'Alt',
+  'AltGraph',
+  'CapsLock',
+  'Control',
+  'Fn',
+  'FnLock',
+  'Hyper',
+  'Meta',
+  'NumLock',
+  'OS',
+  'ScrollLock',
+  'Shift',
+  'Super',
+  'Symbol',
+  'SymbolLock',
+]);
+
+export function isModifierKey(key: string): boolean {
+  return MODIFIER_KEYS.has(key);
+}
+
+/**
  * Advance the buffer by one keystroke.
  *
  * `key` is the DOM `KeyboardEvent.key`; `at` is a monotonic millisecond clock.
  * Anything that is not a single character or Enter — Tab, Escape, an arrow —
- * abandons the run, because a person reached for it.
+ * abandons the run, because a person reached for it. A modifier on its own is
+ * the exception: it passes through without touching the buffer at all.
  */
 export function stepScanBuffer(buffer: ScanBuffer, key: string, at: number): ScanStep {
+  /*
+   * Not even the timestamp moves. The gap that tells a machine from a person is
+   * the one between characters, and a modifier transition carries none of its
+   * own — charging the run for the time the Shift took would make a scanner
+   * look slower than it is.
+   */
+  if (isModifierKey(key)) return { buffer, scanned: null, suppress: false };
+
   if (key === 'Enter') {
     const complete =
       buffer.chars.length >= MIN_CODE_LENGTH && at - buffer.lastAt <= SCAN_GAP_MS

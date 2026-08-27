@@ -32,6 +32,20 @@ interface ItemScannerProps {
    * component cannot do for itself.
    */
   onItem: (item: Item) => void;
+  /**
+   * A code has been read, before anything is known about it. The form is
+   * expected to clear the quantity box here.
+   *
+   * This cannot wait for `onItem`, because the paths that never reach it are
+   * the ones that need it most. `SUPPRESS_AFTER` in scanning.ts lets the first
+   * three characters of every code through on purpose, and they land in
+   * whatever has focus — which, after the previous scan, is the quantity box.
+   * Clear only on success and an unknown `5012345678900` leaves `501` sitting
+   * in it: type the real count after that and 12 is posted as 50112, tab away
+   * and 501 is posted on its own. A wrong quantity arriving by exactly the
+   * route this feature exists to make safe.
+   */
+  onScanStart: () => void;
 }
 
 /**
@@ -42,7 +56,7 @@ interface ItemScannerProps {
  * is, because an operator holding a scanner in an aisle should not have to
  * click into a box first.
  */
-export function ItemScanner({ onItem }: ItemScannerProps) {
+export function ItemScanner({ onItem, onScanStart }: ItemScannerProps) {
   const lookup = useItemLookup();
   const [problem, setProblem] = useState<ScanProblem | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -52,6 +66,9 @@ export function ItemScanner({ onItem }: ItemScannerProps) {
     const code = raw.trim();
     if (code === '') return;
     setProblem(null);
+    // Before the lookup, so every way this can end has already cleaned up after
+    // itself. A scan starts a new line whatever it turns out to resolve to.
+    onScanStart();
 
     try {
       const item = await lookup.mutateAsync(code);

@@ -94,15 +94,19 @@ export function MoveForm({ kind }: { kind: 'receive' | 'issue' }) {
   };
 
   /**
-   * A scan chose the item, so the operator's hands are free for the number.
+   * A code has been read — nothing is known about it yet.
    *
-   * The quantity is cleared first: a scan starts a new line, whatever was
-   * half-typed against the last SKU is void, and the first character of the
-   * scan itself may have landed in this box on its way past.
+   * The quantity goes now rather than on the way out: a scan starts a new line,
+   * whatever was half-typed against the last SKU is void, and the first
+   * characters of the scan itself land in this box on their way past. Clearing
+   * it only when the code resolves would leave that prefix behind on precisely
+   * the scans that failed, with the cursor still sitting after it.
    */
+  const scanStarted = () => setValue('quantity', '');
+
+  /** It resolved, so the operator's hands are free for the number. */
   const scanned = (next: Item) => {
     chooseItem(next);
-    setValue('quantity', '');
     setFocus('quantity');
   };
 
@@ -140,7 +144,7 @@ export function MoveForm({ kind }: { kind: 'receive' | 'issue' }) {
   return (
     <FormCard title={copy.title} description={copy.description}>
       <form onSubmit={onSubmit} className="grid gap-4" noValidate>
-        <ItemScanner onItem={scanned} />
+        <ItemScanner onItem={scanned} onScanStart={scanStarted} />
 
         <div className="grid gap-4 sm:grid-cols-2">
           <ItemPicker value={item} onChange={chooseItem} error={errors.itemId?.message} />
