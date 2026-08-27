@@ -176,10 +176,20 @@ asks it to. If you would rather it did not, build only the API with
 `pnpm --filter @invintelx/api build` and it will log that it is serving `/api`
 only.
 
+There is also a `Dockerfile` that builds the whole thing into one image — the
+API serving `/api` and the compiled web app on one port — which the release
+workflow pushes to `ghcr.io/bakerheit/invintelx` on every version tag. No tag
+has been cut since it landed, so no image has actually been published yet.
+
 None of this is a supported deployment yet — see the status note at the top.
-Releases are tagged and there is a changelog to read before you move, but there
-is no published image and no upgrade that has been proven across a version
-boundary. It is how you run it today, honestly described.
+Releases are tagged and there is a changelog to read before you move, but no
+upgrade has been proven across a version boundary. It is how you run it today,
+honestly described.
+
+[docs/deploying.md](docs/deploying.md) describes how invintelx.org itself is
+deployed — Fly, Cloudflare, and a pipeline that follows green CI on `main`. That
+is our deployment rather than a recommendation for yours, but the reasoning is
+there to borrow from.
 
 ### Backups
 

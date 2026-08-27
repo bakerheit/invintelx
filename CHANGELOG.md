@@ -77,6 +77,27 @@ this release is on the only shape the data has ever had.
 - Licensed AGPL-3.0-or-later, with the section 13 source offer the licence
   requires wired into the running app via `VITE_SOURCE_URL`. Point it at your
   own source if you modify InvIntelX and serve it to other people.
+- A `Dockerfile` that builds the whole application into one image: the API
+  serving `/api` and the compiled web app on a single port, running as a
+  non-root user with a health check on `/api/health`. The release workflow
+  publishes it to `ghcr.io/bakerheit/invintelx` on every version tag, which it
+  was already written to do as soon as a Dockerfile existed.
+- A deploy pipeline for invintelx.org: green CI on `main` publishes an
+  immutable `main-<sha>` image and releases it to Fly.io, and rolling back is
+  the same workflow run by hand with an older tag. The host choice, the DNS and
+  TLS steps, the CDN cache rules and the rollback runbook are in
+  [docs/deploying.md](docs/deploying.md). Nothing has been run against a real
+  account yet.
+
+### Changed
+
+- `packages/shared` now compiles to JavaScript as part of `pnpm build`, and
+  exports it under a `invintelx-dist` condition that only the production
+  container turns on. Every existing consumer — vite, vitest, tsx — resolves the
+  TypeScript source exactly as before. Without this the API's compiled output
+  could not boot at all: it still imports `@invintelx/shared`, and Node cannot
+  load a `.ts` file out of `node_modules`. `pnpm --filter @invintelx/api start`
+  passes the flag for the same reason.
 
 ### Known limitations
 
@@ -86,8 +107,13 @@ this release is on the only shape the data has ever had.
   leaving it out and reading as "no delivery is late".
 - Dashboard figures count the active catalogue only, inventory value included.
   Stock left on an archived SKU is invisible on that screen.
-- No published container image and no `docker compose up` that runs the app —
-  `docker-compose.yml` starts MongoDB for development and nothing else.
+- There is a `Dockerfile`, but no image has been published yet: no version has
+  been tagged since it landed, and nobody has built or run it. It is reviewed
+  code, not a tested artefact. There is still no `docker compose up` that runs
+  the app — `docker-compose.yml` starts MongoDB for development and nothing else.
+- The deploy pipeline has never deployed anything. invintelx.org has no Fly app,
+  no DNS and no certificate yet; `docs/deploying.md` is the checklist for
+  creating them, and it says so at the top.
 - No upgrade has been exercised across a version boundary, because there is no
   earlier version to exercise it from. Whether skipping versions will be
   allowed is not decided yet.

@@ -1,0 +1,27 @@
+# The build stage installs and compiles from a clean context. Anything a
+# developer's checkout happens to have lying around must not reach the image —
+# a stale apps/web/dist is the one that would actually get served.
+#
+# Patterns are matched against the whole path, so `node_modules` alone would
+# exclude the root one and copy apps/api/node_modules in beside it. `**/` is
+# what makes these mean what they read as.
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/*.tsbuildinfo
+
+.git
+.github
+**/.vite
+**/.turbo
+.mongo-data
+
+# Never. Production configuration arrives as real environment variables from
+# the host's secret store; a .env baked into a layer is a published secret.
+.env
+.env.local
+.env.*.local
+
+**/.DS_Store
+**/*.log
