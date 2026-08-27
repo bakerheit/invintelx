@@ -22,10 +22,23 @@ let createRateLimiter: typeof RateLimitModule.createRateLimiter;
  */
 const WIDE_WINDOW_MS = 60 * 60 * 1000;
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+/**
+ * A clock the test moves by hand.
+ *
+ * The limiter takes one because the alternative for a rollover test is a real
+ * wait, and a timing-dependent assertion on shared hardware is how a suite goes
+ * intermittently red for reasons nobody can reproduce. Fake timers are not the
+ * escape: they would freeze the driver's heartbeats along with everything else.
+ */
+function stubClock(start = 1_700_000_000_000): { now: () => number; advance: (ms: number) => void } {
+  let t = start;
+  return {
+    now: () => t,
+    advance: (ms) => {
+      t += ms;
+    },
+  };
+}
 
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
@@ -67,12 +80,16 @@ describe('createRateLimiter', () => {
   });
 
   it('lets a blocked key back in once the window rolls over', async () => {
-    // Real time rather than fake timers: the driver's own timeouts and heartbeats
-    // run on the same clock, so freezing it would be freezing Mongo too.
-    const consume = createRateLimiter({ name: 'test', limit: 1, windowMs: 200 });
+    const clock = stubClock();
+    const consume = createRateLimiter({
+      name: 'test',
+      limit: 1,
+      windowMs: WIDE_WINDOW_MS,
+      now: clock.now,
+    });
     await consume('key');
     await expect(consume('key')).rejects.toThrow();
-    await sleep(250);
+    clock.advance(WIDE_WINDOW_MS);
     await expect(consume('key')).resolves.toBeUndefined();
   });
 
@@ -120,6 +137,58 @@ describe('createRateLimiter', () => {
     });
     await consume('key');
     await expect(consume('key')).rejects.toThrow(/Try again in a few minutes/);
+  });
+});
+
+/**
+ * The key is an address the client can influence, so the number of documents a
+ * window can hold is a number an attacker would otherwise choose. These are the
+ * tests that say it is bounded, and what the bound costs.
+ */
+describe('key cardinality', () => {
+  it('refuses a key it has not seen once the window is full, without writing', async () => {
+    const consume = createRateLimiter({
+      name: 'test',
+      limit: 100,
+      windowMs: WIDE_WINDOW_MS,
+      maxKeys: 2,
+    });
+    await consume('1.1.1.1');
+    await consume('2.2.2.2');
+
+    await expect(consume('3.3.3.3')).rejects.toThrow(TooManyRequestsError);
+    // The refusal is the point; that it cost no storage is the whole point.
+    expect(await db.rateLimits().countDocuments({})).toBe(2);
+  });
+
+  it('keeps serving the keys it already admitted', async () => {
+    const consume = createRateLimiter({
+      name: 'test',
+      limit: 100,
+      windowMs: WIDE_WINDOW_MS,
+      maxKeys: 1,
+    });
+    await consume('1.1.1.1');
+    await expect(consume('2.2.2.2')).rejects.toThrow(TooManyRequestsError);
+    // A full window locks out strangers, not the clients already inside it.
+    await expect(consume('1.1.1.1')).resolves.toBeUndefined();
+  });
+
+  it('gets its allowance back when the window rolls over', async () => {
+    const clock = stubClock();
+    const consume = createRateLimiter({
+      name: 'test',
+      limit: 100,
+      windowMs: WIDE_WINDOW_MS,
+      maxKeys: 1,
+      now: clock.now,
+    });
+    await consume('1.1.1.1');
+    await expect(consume('2.2.2.2')).rejects.toThrow(TooManyRequestsError);
+
+    clock.advance(WIDE_WINDOW_MS);
+    // Otherwise one saturated window would be a permanent lockout.
+    await expect(consume('2.2.2.2')).resolves.toBeUndefined();
   });
 });
 
