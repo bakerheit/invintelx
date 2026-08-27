@@ -1,0 +1,50 @@
+name: Feature request
+description: Suggest something InvIntelX should do that it does not do yet.
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The README has a roadmap. If what you want is already on it, an issue is still
+        useful — say what you need it for, because that is what decides the order.
+
+        Requests aimed at making InvIntelX easier to self-host are welcome and patches
+        for them are taken, but bear in mind that invintelx.org is the only deployment
+        this project runs, so nothing here is promised.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description:
+        The situation, not the solution. "I need to know which SKUs a supplier is late
+        on" tells us more than "add a lateness column".
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like InvIntelX to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do instead today?
+      description:
+        A workaround, a spreadsheet, another tool — knowing what it is competing with
+        helps.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you post
+      options:
+        - label: I searched the existing issues and the README roadmap for this.
+          required: true
+        - label:
+            I agree to follow this project's
+            [Code of Conduct](https://github.com/bakerheit/invintelx/blob/main/CODE_OF_CONDUCT.md).
+          required: true
