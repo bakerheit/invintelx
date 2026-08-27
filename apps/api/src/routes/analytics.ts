@@ -4,6 +4,8 @@ import { z } from 'zod';
 import {
   actionListQuerySchema,
   actionListResponseSchema,
+  dashboardQuerySchema,
+  dashboardResponseSchema,
   demandStatsSchema,
   objectIdSchema,
   reorderSuggestionSchema,
@@ -11,9 +13,37 @@ import {
 import { items, stockLevels } from '../db.js';
 import { NotFoundError } from '../errors.js';
 import { asyncHandler, parseOrThrow } from '../lib/http.js';
-import { buildActionList, demandByItem, statsFromSeries, suggestReorder } from '../services/analytics.js';
+import {
+  buildActionList,
+  buildDashboard,
+  demandByItem,
+  statsFromSeries,
+  suggestReorder,
+} from '../services/analytics.js';
 
 export const analyticsRouter: Router = Router();
+
+/**
+ * The landing screen: what is out, what is about to be, what has stopped
+ * moving, and how much the whole thing is worth.
+ *
+ * Declared ahead of `/demand/:itemId` for readability only — Express matches
+ * literal segments before parameterised ones on distinct paths, and these two
+ * do not overlap.
+ */
+analyticsRouter.get(
+  '/dashboard',
+  asyncHandler(async (req, res) => {
+    const query = parseOrThrow(dashboardQuerySchema, req.query);
+    const snapshot = await buildDashboard(query);
+
+    // Validating our own response catches contract drift here rather than as a
+    // confusing parse failure in the browser.
+    res.json(
+      dashboardResponseSchema.parse({ generatedAt: new Date().toISOString(), ...snapshot }),
+    );
+  }),
+);
 
 /** The dashboard's only card: what to reorder today, worst first. */
 analyticsRouter.get(
