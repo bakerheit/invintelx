@@ -110,6 +110,14 @@ this release is on the only shape the data has ever had.
 - Licensed AGPL-3.0-or-later, with the section 13 source offer the licence
   requires wired into the running app via `VITE_SOURCE_URL`. Point it at your
   own source if you modify InvIntelX and serve it to other people.
+- A private route for reporting a security hole, and a written support policy
+  that says where the commitment ends. [SECURITY.md](SECURITY.md) is the
+  disclosure route — a GitHub private advisory, never a public issue — with what
+  to include, what happens after you send it, and the list of documented
+  behaviours that are not vulnerabilities.
+  [docs/support-policy.md](docs/support-policy.md) says which versions get fixes
+  and for how long, and what belongs to whoever is operating the instance rather
+  than to the application.
 
 ### Known limitations
 
@@ -132,4 +140,6 @@ this release is on the only shape the data has ever had.
 - The restore procedure is documented and its final check is tested, but nobody
   has yet run it end to end against a real deployment. An untested backup is a
   belief; treat it as documented rather than proven.
-- Self-hosting is permitted and documented but not *supported*. See the README.
+- Self-hosting is permitted and documented but not *supported*. See the README,
+  and [docs/support-policy.md](docs/support-policy.md) for where the line
+  currently sits.
