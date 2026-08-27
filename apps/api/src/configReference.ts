@@ -57,8 +57,9 @@ const CONFIG_DOCS: Record<keyof Env, VarDoc> = {
   },
   PORT: {
     does:
-      'The port the API listens on. One process answers both `/api` and the web app, so this is ' +
-      'the only port InvIntelX opens.',
+      'The port the API listens on. A process answers both `/api` and the web app from it, so ' +
+      'this is the only port a process opens. Running several on one host means giving each its ' +
+      'own value.',
     rejects: ['0', '70000', 'not-a-port'],
     accepted:
       'A port already in use is an `EADDRINUSE` crash at boot, which is loud enough. The quiet one ' +
@@ -115,9 +116,10 @@ const CONFIG_DOCS: Record<keyof Env, VarDoc> = {
   WEB_ORIGIN: {
     does:
       'The single origin allowed to make credentialed cross-origin calls to `/api`.\n\n' +
-      'In the deployment this project documents — one process serving both the API and the web ' +
-      'app — the browser is always same-origin and **this value is never consulted**. It matters ' +
-      'only if the web assets are served from a different host or port to the API.',
+      'In the deployment this project documents — the API serving the web app itself, so that the ' +
+      'browser sees one origin however many processes are behind it — the browser is always ' +
+      'same-origin and **this value is never consulted**. It matters only if the web assets are ' +
+      'served from a different host or port to the API.',
     rejects: ['invintelx.example.com'],
     accepted:
       'In a single-origin deployment: no effect whatsoever, including when it is left at the ' +
