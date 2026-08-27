@@ -131,6 +131,7 @@ not a state this repository can be in. Two things worth knowing before you tag:
   is served from the same origin. A Dockerfile that compiles but produces a
   container that cannot boot fails there rather than at a tag.
 
-One thing a supported upgrade path still needs is not here: an upgrade exercised
-in CI across a real version boundary. Until that exists, whether skipping
+Two other things a supported upgrade path needs are also not here yet: schema
+migrations with a recorded database version, and an upgrade exercised in CI
+across a real version boundary. Until that second one exists, whether skipping
 versions is allowed is undecided — and undecided means do not skip.

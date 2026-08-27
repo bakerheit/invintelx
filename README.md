@@ -8,11 +8,10 @@ The hosted instance is [invintelx.org](https://invintelx.org).
 **You may run your own.** The AGPL grants you that right and this project has no
 interest in obstructing it. There is a published image and a compose file that
 runs the whole thing — see [Running it with Docker](#running-it-with-docker).
-What we do not yet offer is a *supported* self-host story: no upgrade has been
-proven across a version boundary, and no promise is made that a deployment
-question gets answered. Running it is allowed and documented; operating it is
-currently your problem. If that changes it will be because people actually did
-it.
+What we do not yet offer is a *supported* self-host story — there is no proven
+upgrade path and no promise that a deployment question gets answered. Running it
+is allowed and documented; operating it is currently your problem. If that
+changes it will be because people actually did it.
 
 Releases are semver tags cut from `main`, and every one of them says what breaks
 and what it will do to your database on first boot: see
@@ -237,10 +236,9 @@ asks it to. If you would rather it did not, build only the API with
 which the compiled API needs as JavaScript.
 
 None of this is a supported deployment yet — see the status note at the top.
-There is a published image, tagged releases and a changelog to read before you
-move, but no upgrade has been proven across a version boundary and no
-deployment question is promised an answer. It is how you run it today, honestly
-described.
+Releases are tagged, there is a published image and there is a changelog to read
+before you move, but there is no upgrade that has been proven across a version
+boundary. It is how you run it today, honestly described.
 
 ### Backups
 
