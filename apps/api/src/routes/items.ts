@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { ObjectId, type Filter } from 'mongodb';
+import { z } from 'zod';
 import {
   createItemInputSchema,
   CsvParseError,
@@ -129,6 +130,56 @@ itemsRouter.get(
      * back in, so the round trip is unaffected.
      */
     res.send(BOM + csv);
+  }),
+);
+
+/**
+ * One code in, one item out — what a barcode scanner needs.
+ *
+ * Deliberately not the `q` search: that one matches substrings across name as
+ * well, which is right for somebody typing and wrong for a machine. A scanner
+ * has read a complete code and the only honest answers are "this item" or
+ * "nothing", because picking the first of eleven partial matches is how the
+ * wrong SKU gets stock booked against it.
+ *
+ * Registered before `/:id` for the same reason `export.csv` is.
+ */
+const lookupQuerySchema = z.object({
+  code: z.string().trim().min(1, 'A code is required').max(64),
+});
+
+/** How many exact matches to pull before choosing. SKU is unique; barcode is not. */
+const MAX_LOOKUP_CANDIDATES = 10;
+
+itemsRouter.get(
+  '/lookup',
+  asyncHandler(async (req, res) => {
+    const { code } = parseOrThrow(lookupQuerySchema, req.query);
+    // SKUs are stored uppercased, so the comparison has to be too — a scanner
+    // that reports lower case is otherwise an unrecognised code.
+    const sku = code.toUpperCase();
+
+    const docs = await items()
+      .find({ $or: [{ sku }, { barcode: code }] })
+      .limit(MAX_LOOKUP_CANDIDATES)
+      .toArray();
+
+    /*
+     * Active beats archived, and a SKU hit beats a barcode hit. Barcodes carry
+     * no unique index — a supplier code reused across two items is a real
+     * thing — so this has to be an order somebody can predict rather than
+     * whatever Mongo returned first.
+     */
+    const match =
+      docs.find((doc) => doc.status === 'active' && doc.sku === sku) ??
+      docs.find((doc) => doc.status === 'active') ??
+      docs.find((doc) => doc.sku === sku) ??
+      docs[0];
+
+    // Archived items come back rather than 404ing. The caller needs to say
+    // "that SKU is archived" instead of offering to create a duplicate of it.
+    if (!match) throw new NotFoundError(`No item has the SKU or barcode ${code}`);
+    res.json(toItem(match));
   }),
 );
 

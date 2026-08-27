@@ -103,6 +103,21 @@ export function itemsExportHref(query: Pick<ItemsQuery, 'q' | 'category' | 'stat
   })}`;
 }
 
+/**
+ * One scanned code to one item.
+ *
+ * A mutation rather than a query, for the same reason the import preview is:
+ * it is an imperative answer to a thing that just happened in the aisle, not a
+ * piece of state a screen renders. Caching it would also mean a code that
+ * resolved to nothing keeps resolving to nothing after somebody creates the
+ * item it was missing.
+ */
+export function useItemLookup() {
+  return useMutation({
+    mutationFn: (code: string) => apiRequest(itemSchema, `/items/lookup${toQueryString({ code })}`),
+  });
+}
+
 export function useItem(id: string) {
   return useQuery({
     queryKey: queryKeys.items.detail(id),
