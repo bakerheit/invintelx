@@ -29,10 +29,6 @@ export const queryKeys = {
     all: ['locations'] as const,
     list: (query: Record<string, unknown>) => ['locations', 'list', query] as const,
   },
-  movements: {
-    all: ['movements'] as const,
-    list: (query: Record<string, unknown>) => ['movements', 'list', query] as const,
-  },
   counts: {
     all: ['counts'] as const,
     /**
@@ -44,5 +40,9 @@ export const queryKeys = {
     lists: ['counts', 'list'] as const,
     list: (query: Record<string, unknown>) => ['counts', 'list', query] as const,
     detail: (id: string) => ['counts', 'detail', id] as const,
+  },
+  movements: {
+    all: ['movements'] as const,
+    list: (query: Record<string, unknown>) => ['movements', 'list', query] as const,
   },
 } as const;

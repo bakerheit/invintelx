@@ -1,16 +1,15 @@
-import {
-  lineVariance,
-  summariseCountSheet,
-  type CountSheet,
-  type CountSheetDetail,
-  type CountSheetLine,
-  type Item,
-  type Location,
-  type Movement,
-  type PublicUser,
-  type StockLevel,
-  type Supplier,
-  type SupplierItem,
+import { lineVariance, summariseCountSheet } from '@invintelx/shared';
+import type {
+  CountSheet,
+  CountSheetDetail,
+  CountSheetLine,
+  Item,
+  Location,
+  Movement,
+  PublicUser,
+  StockLevel,
+  Supplier,
+  SupplierItem,
 } from '@invintelx/shared';
 import type {
   CountSheetDoc,
@@ -135,6 +134,16 @@ export function toMovement(doc: MovementDoc): Movement {
   };
 }
 
+export function toStockLevel(doc: StockLevelDoc): StockLevel {
+  return {
+    itemId: doc.itemId.toHexString(),
+    locationId: doc.locationId.toHexString(),
+    locationCode: doc.locationCode,
+    onHand: doc.onHand,
+    updatedAt: doc.updatedAt.toISOString(),
+  };
+}
+
 export function toCountSheetLine(doc: CountSheetLineDoc): CountSheetLine {
   return {
     id: doc._id.toHexString(),
@@ -176,14 +185,4 @@ export function toCountSheet(doc: CountSheetDoc): CountSheet {
 
 export function toCountSheetDetail(doc: CountSheetDoc): CountSheetDetail {
   return { ...toCountSheet(doc), lines: doc.lines.map(toCountSheetLine) };
-}
-
-export function toStockLevel(doc: StockLevelDoc): StockLevel {
-  return {
-    itemId: doc.itemId.toHexString(),
-    locationId: doc.locationId.toHexString(),
-    locationCode: doc.locationCode,
-    onHand: doc.onHand,
-    updatedAt: doc.updatedAt.toISOString(),
-  };
 }
