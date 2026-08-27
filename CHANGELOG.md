@@ -67,6 +67,17 @@ this release is on the only shape the data has ever had.
   `GET /api/analytics/dashboard`, which takes `windowDays`, `leadTimeDays`,
   `serviceLevel`, `deadStockDays` and `limit`. Each list reports the full count
   alongside the rows it shows, so a shortlist is never mistaken for the total.
+- A deployment guide and a configuration reference:
+  [docs/deployment.md](docs/deployment.md) covers TLS termination, the reverse
+  proxy headers the sign-in rate limiter depends on, what running more than one
+  API instance now needs, why the session cookie only gets `Secure` when
+  `NODE_ENV=production`, and the `/api/health` endpoint to point a probe at.
+  [docs/configuration.md](docs/configuration.md) documents every environment
+  variable, including what a wrong value looks like from the outside — and is
+  **generated** from the Zod schema the API boots against, with the rejection
+  messages obtained by parsing a bad value rather than being retyped.
+  `pnpm docs:config` regenerates it and `pnpm test` fails if the page and the
+  schema have drifted apart.
 - A deliberate act between deploying an instance and it having an
   administrator. While an instance has no accounts the API mints a **setup
   token** at each boot and prints it; registration will not create an
