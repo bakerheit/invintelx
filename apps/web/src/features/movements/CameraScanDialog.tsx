@@ -72,10 +72,21 @@ interface CameraScanDialogProps {
 export function CameraScanDialog({ open, onOpenChange, onScan }: CameraScanDialogProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
-  // The callback is held in a ref so the effect below depends on `open` alone.
-  // Re-running it would stop and restart the camera mid-look.
+  /*
+   * Both callbacks are held in refs so the effect below depends on `open` alone.
+   * Re-running it would stop and restart the camera mid-look — the cleanup is
+   * `stop()`, which ends the MediaStream tracks — so a caller that passes an
+   * inline arrow for either would have getUserMedia torn down and set up again
+   * on every render of its parent: a viewfinder that never holds still long
+   * enough to read a label. `onOpenChange` is in here for that reason and not
+   * because the effect wants a stale copy; today's only caller happens to pass a
+   * stable setState, which is exactly the kind of accident this should not rest
+   * on.
+   */
   const onScanRef = useRef(onScan);
   onScanRef.current = onScan;
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
 
   useEffect(() => {
     if (!open) return;
@@ -130,7 +141,7 @@ export function CameraScanDialog({ open, onOpenChange, onScan }: CameraScanDialo
             const code = found[0]?.rawValue;
             if (code) {
               stop();
-              onOpenChange(false);
+              onOpenChangeRef.current(false);
               onScanRef.current(code);
               return;
             }
@@ -147,7 +158,7 @@ export function CameraScanDialog({ open, onOpenChange, onScan }: CameraScanDialo
     })();
 
     return stop;
-  }, [open, onOpenChange]);
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

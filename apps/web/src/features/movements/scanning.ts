@@ -24,9 +24,15 @@ export const SCAN_GAP_MS = 35;
 /**
  * Shorter than this is not a scan.
  *
- * Guards the one plausible false positive left: a modifier chord or a stray
- * double-tap followed immediately by Enter. Every retail and industrial symbology
- * a warehouse uses carries at least six characters.
+ * Guards the plausible false positive: a stray double-tap followed immediately
+ * by Enter. Every retail and industrial symbology a warehouse uses carries at
+ * least six characters. (A modifier chord used to be named here too, and stopped
+ * being reachable when `stepScanBuffer` began stepping over a modifier keydown
+ * without touching the buffer at all.)
+ *
+ * It also draws the other line this file cares about. A fast run that ends
+ * shorter than this is not a code — it is a code that got cut off — so its Enter
+ * is held back rather than handed to the form. See the Enter branch below.
  */
 export const MIN_CODE_LENGTH = 4;
 
@@ -37,8 +43,13 @@ export const MIN_CODE_LENGTH = 4;
  * until the timing proved it was a machine, and dropping a character somebody
  * meant to type is a worse bug than leaving a stray one behind. Three in a row
  * under `SCAN_GAP_MS` is already beyond a person; four is not a judgement call.
- * The stray prefix lands in the quantity box or the item search, both of which
- * the scan clears on its way through.
+ *
+ * The stray prefix lands in the quantity box or the item search. Only the
+ * quantity box is cleaned up: every form empties it from `onScanStart`, which
+ * runs before the lookup so the failing paths get it too. Nothing clears the
+ * picker's own query, so a scan made from the item search leaves the prefix
+ * sitting in it until somebody chooses a row or edits it — residue rather than
+ * data, and the Enter rule below is what keeps it from becoming a movement.
  */
 const SUPPRESS_AFTER = 3;
 
@@ -117,13 +128,33 @@ export function stepScanBuffer(buffer: ScanBuffer, key: string, at: number): Sca
   if (isModifierKey(key)) return { buffer, scanned: null, suppress: false };
 
   if (key === 'Enter') {
-    const complete =
-      buffer.chars.length >= MIN_CODE_LENGTH && at - buffer.lastAt <= SCAN_GAP_MS
-        ? buffer.chars
-        : null;
-    // The Enter itself is never suppressed here. When it did not close a scan it
-    // is somebody submitting the form, and swallowing that is unforgivable.
-    return { buffer: EMPTY_SCAN_BUFFER, scanned: complete, suppress: false };
+    // Non-empty as well as fast: a bare Enter on an untouched buffer is somebody
+    // submitting an empty form, and `lastAt` is 0 there rather than recent.
+    const closesARun = buffer.chars.length > 0 && at - buffer.lastAt <= SCAN_GAP_MS;
+    const complete = closesARun && buffer.chars.length >= MIN_CODE_LENGTH ? buffer.chars : null;
+
+    /*
+     * An Enter that closed nothing is normally somebody submitting the form, and
+     * swallowing that is unforgivable — it would make the submit button the only
+     * way to post a movement. The one exception is drawn by the clock rather
+     * than by guessing at intent: an Enter arriving within `SCAN_GAP_MS` of a
+     * character, on a run too short to be a code, is the tail of a scan that got
+     * cut off. Nobody presses Enter 35ms after a keystroke, so nothing a person
+     * did is lost here.
+     *
+     * It has to be held back, because the state it arrives into is a trap. The
+     * run fired no lookup, so `onScanStart` never ran and the quantity box still
+     * holds up to `SUPPRESS_AFTER` characters of the tail, with the item and bin
+     * from the previous scan still selected. If those characters are digits the
+     * form is valid and this Enter posts a movement with a quantity nobody
+     * typed. In a picker it takes the highlighted row instead — a partial match
+     * for the same stray characters, which books stock against the wrong SKU.
+     */
+    return {
+      buffer: EMPTY_SCAN_BUFFER,
+      scanned: complete,
+      suppress: complete === null && closesARun,
+    };
   }
 
   if (key.length !== 1) return { buffer: EMPTY_SCAN_BUFFER, scanned: null, suppress: false };

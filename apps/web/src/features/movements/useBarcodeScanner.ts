@@ -11,8 +11,15 @@ import { EMPTY_SCAN_BUFFER, isModifierKey, stepScanBuffer, type ScanBuffer } fro
  * The two inputs that *are* armed are the ones an operator is realistically
  * standing on when the next label goes under the gun — the quantity box, which
  * the previous scan put them in, and the item search, which is where the
- * instinct to "scan into the box" lands. A stray first character in either is
- * cleared by the scan that follows it.
+ * instinct to "scan into the box" lands.
+ *
+ * A stray first character in the quantity box is cleared by the scan that
+ * follows it: every form empties that box from `onScanStart`. The item search is
+ * not cleared by anything — the forms call `onChange` directly rather than
+ * SearchPicker's own `choose`, so its query keeps whatever `SUPPRESS_AFTER` let
+ * through. That is visible residue and not a wrong value: a chosen item swaps
+ * the search box out for the chosen-row view, and an Enter on a run too short to
+ * be a code is held back before the picker can read it.
  */
 export function isScanTarget(element: Element | null): boolean {
   if (!element) return true;
@@ -87,6 +94,15 @@ export function useBarcodeScanner(onScan: (code: string) => void, enabled = true
         onScanRef.current(step.scanned);
       } else if (step.suppress) {
         event.preventDefault();
+        /*
+         * A held-back Enter has to be kept from handlers as well as from the
+         * field. `preventDefault` stops the implicit form submit, but the item
+         * picker reads Enter in its own `onKeyDown` and takes the highlighted
+         * row — a partial match for the characters this same run leaked into the
+         * search box. Nothing else in these forms acts on a bare character
+         * keydown, so this stays on the key that needs it.
+         */
+        if (event.key === 'Enter') event.stopPropagation();
       }
     };
 
