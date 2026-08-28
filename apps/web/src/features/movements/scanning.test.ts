@@ -69,11 +69,47 @@ describe('telling a scanner from a person', () => {
   });
 
   /*
-   * An Enter that closed nothing is somebody submitting the form. Suppressing it
-   * would make the submit button the only way to post a movement.
+   * An Enter that closed nothing is normally somebody submitting the form, and
+   * suppressing that would make the submit button the only way to post a
+   * movement. The gap is the only thing separating this from the test below —
+   * same three keys, read two different ways by the clock alone.
    */
-  it('never suppresses an Enter that did not close a scan', () => {
-    expect(run(['A', 'B', 'Enter'], 8).suppressed).toEqual([]);
+  it('never suppresses an Enter a person could have pressed', () => {
+    expect(run(['A', 'B', 'Enter'], 120).suppressed).toEqual([]);
+  });
+
+  /** The same, on a buffer long enough to be a code that somebody typed out. */
+  it('never suppresses the Enter on a code typed out by hand', () => {
+    expect(run([...GTIN, 'Enter'], 120).suppressed).toEqual([]);
+  });
+
+  /*
+   * The other reading of those three keys, and the failure this is here for. A
+   * run cut off mid-code fires no lookup, so nothing clears the quantity box the
+   * previous scan left the cursor in — and up to SUPPRESS_AFTER characters of
+   * the tail are sitting in it with the item and bin still selected. Letting
+   * this Enter through posts a movement with a quantity nobody typed; in a
+   * picker it takes the highlighted row instead. Nobody presses Enter 8ms after
+   * a keystroke, so the case the comment on that branch protects is untouched.
+   */
+  it('holds back an Enter arriving at scanner speed on a run too short to be a code', () => {
+    expect(run(['A', 'B', 'Enter'], 8).suppressed).toEqual(['Enter']);
+  });
+
+  /* Held back is not the same as accepted: the truncated tail is still not a code. */
+  it('does not turn the Enter it holds back into a scan', () => {
+    expect(run(['A', 'B', 'Enter'], 8).scanned).toEqual([]);
+  });
+
+  /*
+   * A person who typed slowly and then hit Enter quickly is still a person: what
+   * decides it is the gap before the Enter, and the buffer here is one character
+   * that arrived 400ms after nothing.
+   */
+  it('holds back nothing when the run before the Enter was typed at human speed', () => {
+    const slow = run(['A', 'B'], 400);
+    const step = stepScanBuffer(slow.buffer, 'Enter', slow.buffer.lastAt + 400);
+    expect(step.suppress).toBe(false);
   });
 
   it('abandons the run when a person reaches for a key that is not a character', () => {
